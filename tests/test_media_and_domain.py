@@ -17,3 +17,9 @@ class MediaAndDomainTests(TestCase):
         self.assertEqual(table_state(0, 0.90), "free")
         self.assertEqual(table_state(2, 0.90), "occupied")
         self.assertEqual(table_state(2, 0.40), "review")
+
+    def test_rejects_invalid_table_values(self):
+        with self.assertRaises(ValueError):
+            table_state(-1, 0.90)
+        with self.assertRaises(ValueError):
+            table_state(1, 1.10)
