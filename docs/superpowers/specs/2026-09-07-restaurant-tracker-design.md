@@ -2,22 +2,22 @@
 
 Fecha: 2026-09-07  
 Equipo: Umizumi (4 integrantes)  
-Estado: arquitectura aprobada; pendiente de revisión del documento
+Estado: alcance revisado; pendiente de revisión final del documento
 
 ## 1. Objetivo
 
-Construir un pipeline que reciba capturas de un restaurante dentro de Roblox,
-detecte la ocupación de mesas y el número de personas, conserve el historial en
-PostgreSQL y presente el estado en un dashboard web propio.
+Construir un pipeline que reciba capturas o videos de un restaurante dentro de
+Roblox, detecte la ocupación de mesas y el número de personas, conserve el
+historial en PostgreSQL y presente el estado en un dashboard web propio.
 
-El MVP procesa imágenes colocadas periódicamente en un directorio. La interfaz
-interna trabaja con frames para permitir que, más adelante, un video pueda
-producir esos mismos frames sin modificar la transformación, el almacenamiento
-o el dashboard.
+El checkpoint de hoy procesa imágenes colocadas periódicamente en un directorio.
+La entrega de los próximos días debe procesar también videos en modo batch,
+extrayendo frames a un intervalo configurable. Ambos tipos de entrada usan el
+mismo contrato interno de frames, transformación, almacenamiento y dashboard.
 
 ## 2. Alcance
 
-Incluido en el MVP:
+Incluido en el checkpoint de hoy:
 
 - Entrada de imágenes JPEG y PNG.
 - Validación e ingestión idempotente mediante SHA-256.
@@ -32,9 +32,15 @@ Incluido en el MVP:
 - Actualización del dashboard mediante polling cada 30 segundos.
 - Ejecución reproducible con Docker Compose.
 
-Fuera del MVP:
+Incluido en la entrega de video de los próximos días:
 
-- Procesamiento directo de video.
+- Entrada de videos MP4.
+- Extracción batch de frames mediante `FRAME_INTERVAL_SECONDS`.
+- Reutilización del mismo proceso de transformación y carga usado por imágenes.
+- Consulta del estado más reciente producido a partir de un video.
+
+Fuera del alcance:
+
 - Streaming continuo.
 - Kafka, Airflow, Redis, Celery o un data lake.
 - WebSockets o Server-Sent Events.
@@ -50,7 +56,7 @@ asignado a una mesa proviene del catálogo fijo.
 ## 3. Arquitectura
 
 ```text
-Imagen Roblox ahora / video después
+Imagen Roblox hoy / video MP4 después
                  |
                  v
           Ingestión de medios
@@ -58,7 +64,7 @@ Imagen Roblox ahora / video después
                  v
        Normalización a uno o más frames
        imagen -> 1 frame
-       video  -> N frames (extensión futura)
+       video  -> N frames muestreados
                  |
                  v
         Detección y transformación
@@ -108,7 +114,7 @@ Criterios de aceptación:
 - PostgreSQL conserva sus datos después de reiniciar los contenedores.
 - El servicio web no se considera listo hasta que la base responda.
 
-### REQ-02 — Ingestión idempotente y adaptable
+### REQ-02 — Ingestión idempotente de imágenes y video
 
 El worker revisa `data/inbox/` cada 30 segundos. Para cada archivo calcula
 SHA-256, valida que pueda decodificarse y registra el medio una sola vez.
@@ -124,16 +130,21 @@ Una imagen genera un frame con `frame_index = 0` y `offset_ms = 0`. La
 transformación solo recibe registros de `frames`; no conoce si estos provienen
 de una imagen o de un video.
 
-La extensión futura de video implementará una función que reciba un archivo y
-produzca frames separados por `FRAME_INTERVAL_SECONDS`. No requiere cambiar el
-contrato de salida de ingestión.
+En la entrega de video, un MP4 se procesa en modo batch mediante OpenCV. El
+extractor produce frames separados por `FRAME_INTERVAL_SECONDS`, conserva el
+offset temporal en `offset_ms` y genera un registro de `frames` por cada frame.
+El video no se procesa como streaming y no requiere un servicio adicional.
 
 Criterios de aceptación:
 
-- Se aceptan `.jpg`, `.jpeg` y `.png`.
+- En el checkpoint de hoy se aceptan `.jpg`, `.jpeg` y `.png`.
+- En la entrega de video se acepta `.mp4` y se producen frames en orden
+  creciente.
 - Un archivo duplicado no vuelve a procesarse.
 - Un archivo corrupto queda en estado `failed` con el motivo registrado.
 - El fallo de un archivo no detiene el procesamiento de los demás.
+- Un video produce observaciones usando exactamente el mismo contrato de salida
+  que una imagen.
 
 ### REQ-03 — Transformación e inferencia
 
@@ -262,7 +273,7 @@ Criterios de aceptación:
 | Integrante | Responsabilidad | Salida del handoff |
 |---|---|---|
 | Umizumi 1 | Docker, PostgreSQL y esquema | Servicios sanos, tablas, vista y datos iniciales |
-| Umizumi 2 | Ingestión y normalización | Registros `media_inputs` y `frames` pendientes |
+| Umizumi 2 | Ingestión y normalización de imágenes y video | Registros `media_inputs` y `frames` pendientes |
 | Umizumi 3 | Modelo, transformación y carga | Registros `table_observations` procesados |
 | Umizumi 4 | Flask, API y dashboard | Visualización consumiendo `latest_table_state` |
 
@@ -301,13 +312,21 @@ Umizumi 2 y Umizumi 3 terminan el pipeline.
 
 ## 7. Verificación mínima
 
-La prueba end-to-end del MVP debe:
+La prueba end-to-end del checkpoint de hoy debe:
 
 1. Colocar una captura conocida en `data/inbox/`.
 2. Confirmar la creación de un `media_input` y un frame.
 3. Confirmar una observación por mesa.
 4. Consultar `/api/tables/latest` y encontrar esas observaciones.
 5. Volver a colocar la misma captura y confirmar que no se duplicó.
+
+La prueba end-to-end de la entrega de video debe:
+
+1. Colocar un MP4 corto en `data/inbox/`.
+2. Confirmar un `media_input` de tipo `video`.
+3. Confirmar la creación ordenada de varios frames con sus offsets.
+4. Confirmar observaciones para esos frames.
+5. Consultar `/api/tables/latest` y encontrar el estado más reciente del video.
 
 También se mantiene un pequeño conjunto etiquetado de capturas Roblox para
 medir ocupación y error de conteo antes de cambiar de modelo.
