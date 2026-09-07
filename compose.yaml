@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-restaurant_tracker}
+      POSTGRES_USER: ${POSTGRES_USER:-restaurant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-restaurant_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/002_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    command: python -m app.web
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-restaurant}:${POSTGRES_PASSWORD:-restaurant_dev}@db:5432/${POSTGRES_DB:-restaurant_tracker}
+      PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+
+  worker:
+    build: .
+    command: python -m app.worker
+    environment:
+      INPUT_DIR: /app/data/inbox
+      INGEST_POLL_SECONDS: 30
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+
+volumes:
+  postgres_data:

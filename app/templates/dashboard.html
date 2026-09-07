@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Restaurant Tracker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">UMIZUMI · RESTAURANT TRACKER</p>
+          <h1>Estado de mesas</h1>
+        </div>
+        <p id="last-updated" class="muted">Cargando…</p>
+      </header>
+      <p id="error" class="error" role="alert" hidden></p>
+      <section id="table-grid" class="table-grid" aria-live="polite"></section>
+    </main>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
