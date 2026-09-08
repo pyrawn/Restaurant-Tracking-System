@@ -1,143 +1,209 @@
 # Handoff — Umizumi 2 → Umizumi 3
 
-Fecha: 2026-09-07  
-Proyecto: Restaurant Tracking System  
-Equipo: Umizumi
+Date: 2026-09-07
+Project: Restaurant Tracking System
+Team: Umizumi
 
-## Objetivo de este handoff
+## Handoff objective
 
-Implementar la inferencia (detección de ocupación y conteo de personas usando Ultralytics/OpenCV) y transformar esos datos para cargarlos en PostgreSQL. Umizumi 3 es responsable del modelo, la transformación y la carga (pipeline ML).
+Implement the real model inference, transform detections into table-level
+observations, and load those observations into PostgreSQL.
 
-Prioridad inmediata:
+The ingestion and frame-normalization contracts are already in place. The next
+person should focus on connecting a lightweight pretrained detector, such as a
+YOLO nano checkpoint, without changing the database contract or the dashboard.
 
-1. Leer todos los `frames` en estado `pending`.
-2. Realizar inferencia utilizando un modelo preentrenado.
-3. Evaluar el punto inferior central de cada detección contra los polígonos de
-   las mesas.
-4. Generar y persistir las observaciones en la tabla `table_observations`.
+## Current state
 
-## Estado actual
+Umizumi 2 has completed the image-independent pipeline work:
 
-Ya existe el pipeline de ingestión y la normalización:
+- The `worker` reads `.jpg`, `.jpeg`, `.png`, and `.mp4` files from
+  `data/inbox/`.
+- Each input is identified with SHA-256 and inserted into `media_inputs` only
+  once.
+- Images are validated with OpenCV and normalized to
+  `data/processed/<media_hash>/0.jpg`.
+- Videos are sampled in batch at `FRAME_INTERVAL_SECONDS` and normalized to
+  numbered JPEG frames.
+- Every normalized frame is inserted into `frames` with `status = 'pending'`.
+- The worker receives `DATABASE_URL`, `INPUT_DIR`, `PROCESSED_DIR`,
+  `INGEST_POLL_SECONDS`, and `FRAME_INTERVAL_SECONDS` through Compose.
+- `app/vision.py` assigns detections to tables using the bottom-center point of
+  each bounding box and returns one observation per configured table.
+- `app/db.py` provides pending-frame queries, table queries, idempotent media
+  insertion, and transactional observation loading.
+- `process_pending_frames(detector, model_version)` is ready to receive a
+  detector callable. The real detector and runtime wiring are still pending.
+- The `/api/tables/latest` row mapping bug was fixed.
+- The base image includes Flask, psycopg, and OpenCV. Ultralytics is not
+  installed yet because it brings heavy ML dependencies and was not needed for
+  ingestion.
+- A clean implementation commit is `e6cdd4f`.
 
-- El servicio `worker` ya lee medios (`.jpg`, `.png`, `.mp4`) de `data/inbox/`.
-- Cada medio se registra en `media_inputs` (validado mediante hash SHA-256 para evitar duplicados).
-- Los medios válidos se normalizan copiándose en `data/processed/<media_hash>/<frame_index>.jpg`.
-- Por cada imagen o _frame_ de video normalizado, existe un registro en la tabla `frames` con `status = pending`.
-- La variable de entorno `DATABASE_URL` ya está correctamente configurada para el worker en `compose.yaml`.
-- OpenCV ya está instalado (`opencv-python-headless`) en los requerimientos.
-- `app/vision.py` ya contiene la asociación por punto inferior central y la
-  generación de una observación por mesa.
-- `process_pending_frames(detector, model_version)` ya coordina la lectura de
-  frames pendientes, la transformación y la carga transaccional.
-- La imagen base todavía no instala Ultralytics; la inferencia real queda a
-  cargo de este handoff.
+## Available input
 
-## No cambiar
-
-- No cambiar el contrato de ingestión ni el estado esperado de los frames.
-  Si aparece un bug en la ingestión, corregirlo con una prueba y documentarlo.
-- No alterar las carpetas `data/inbox` ni `data/processed`.
-- No modificar el esquema de `frames` o `media_inputs`.
-- No cambiar la estructura de la base de datos a menos que sea estrictamente necesario para el modelo.
-- No desarrollar nada relacionado a Flask (eso es para Umizumi 4).
-
-## Contrato de entrada
-
-Umizumi 3 consume información desde PostgreSQL (tabla `frames`) y disco (carpeta `data/processed/`).
-
-Debe consultar:
-```sql
-SELECT id, image_path, media_input_id, frame_index, captured_at 
-FROM frames 
-WHERE status = 'pending'
-```
-
-Las mesas fijas contra las que se deben calcular las colisiones están en la tabla `tables`:
-```sql
-SELECT id, name, capacity, polygon FROM tables
-```
-
-## Salida esperada
-
-Para cada frame consultado, el modelo debe generar observaciones por mesa.
-Cada observación debe persistirse en `table_observations` con la siguiente estructura mínima (siguiendo el esquema):
+There is currently one image frame in:
 
 ```text
-frame_id           = <ID del frame procesado>
-table_id           = <ID de la mesa evaluada>
-people_count       = <conteo de personas en el polígono>
-occupied           = <true si people_count > 0 else false>
-confidence         = <confianza de la inferencia, entre 0 y 1>
-detected_waiter_id = <ID del mesero si detectado, o NULL>
-model_version      = "configured-model-version" (o string fijo)
+data/inbox/WhatsApp Image 2026-09-07 at 7.32.40 PM.jpeg
 ```
 
-Al terminar de generar todas las observaciones del frame, el registro de la tabla `frames` correspondiente debe actualizarse:
+Use this file to iterate on the detector and end-to-end flow. The file is a
+local input fixture and may not be included in a Git clone unless it is shared
+or committed separately. There is no labeled dataset yet.
+
+## Scope for Umizumi 3
+
+1. Add `ultralytics` and any strictly necessary model dependencies.
+2. Create a small detector adapter that receives an `image_path` and returns
+   person detections in this shape:
+
+   ```python
+   [{"box": [x1, y1, x2, y2], "confidence": 0.87}]
+   ```
+
+3. Connect that adapter to `process_pending_frames(detector, model_version)`.
+4. Run the pipeline against the one available Roblox frame.
+5. Inspect the resulting `table_observations` and tune the confidence threshold
+   or table polygons only if the frame demonstrates a real need.
+
+The detector adapter should filter for people before calling
+`build_table_observations()`. Do not duplicate the point-in-polygon logic.
+
+## Input contract
+
+Pending frames are queried from PostgreSQL:
+
+```sql
+SELECT id, image_path, media_input_id, frame_index, captured_at
+FROM frames
+WHERE status = 'pending'
+ORDER BY id;
+```
+
+The fixed table polygons are queried with:
+
+```sql
+SELECT id, name, capacity, polygon
+FROM tables
+ORDER BY id;
+```
+
+The detector receives the `image_path` stored in each frame. It must return
+only person detections; table assignment is handled by `app/vision.py`.
+
+## Output contract
+
+For every configured table and processed frame, persist one row in
+`table_observations`:
+
+```text
+frame_id           = <processed frame id>
+table_id           = <configured table id>
+people_count       = <detections assigned to the table>
+occupied           = <true when people_count > 0>
+confidence         = <value between 0 and 1>
+detected_waiter_id = <waiter id when implemented, otherwise NULL>
+model_version      = <fixed or configured model version>
+```
+
+After all table observations for a frame are written successfully, the frame
+must become:
+
 ```text
 status = 'processed'
 ```
-*(Si ocurre un error insalvable durante la inferencia para ese frame, pasarlo a `status = 'failed'`)*.
 
-## Archivos a revisar
+If inference or image loading fails, mark the frame as `failed`. The existing
+`save_frame_observations()` function writes all observations and the processed
+status in one transaction.
 
-Punto de entrada:
+## Files to use
 
-- `app/worker.py`: Conectar un detector real a `process_pending_frames()`.
-- `app/vision.py`: Reutilizar `build_table_observations()`; no duplicar la
-  lógica de punto-en-polígono.
-- `app/db.py`: Reutilizar `fetch_pending_frames()`, `fetch_tables()` y
-  `save_frame_observations()`.
-- `requirements.txt`: Agregar `ultralytics` u otras dependencias necesarias para la red neuronal.
+- `app/worker.py`: connect the real detector and call
+  `process_pending_frames()`.
+- `app/vision.py`: reuse `build_table_observations()` and
+  `point_in_polygon()`.
+- `app/db.py`: reuse `fetch_pending_frames()`, `fetch_tables()`,
+  `save_frame_observations()`, and `mark_frame_failed()`.
+- `requirements.txt`: add Ultralytics only when implementing inference.
+- `compose.yaml`: keep the worker environment and shared `data` volume
+  consistent.
+- `db/schema.sql`: treat `frames` and `table_observations` as the interface;
+  do not change them without coordinating with Umizumi 4.
 
-## Criterios de aceptación
+## Constraints
 
-- [ ] `process_pending_frames()` toma los `frames` en estado `pending` y no procesa los `processed` ni `failed`.
-- [ ] La inferencia identifica personas y utiliza el polígono de las mesas para filtrar a qué mesa pertenece la detección (el punto inferior central cae en el polígono).
-- [ ] Las inserciones a `table_observations` son atómicas (todas las observaciones del frame entran, o ninguna).
-- [ ] Tras un procesamiento exitoso, el frame queda marcado como `processed`.
-- [ ] Las dependencias extras como `ultralytics` o `torch` quedan empaquetadas en `requirements.txt` y construyen bien en el `Dockerfile`.
+- Do not use Streamlit, Kafka, Airflow, Redis, Celery, a data lake, WebSockets,
+  or another service.
+- Do not modify Flask or the dashboard; that belongs to Umizumi 4.
+- Waiters and skins remain fixed; there is no waiter CRUD.
+- Do not train a neural network from scratch.
+- Keep the inference path batch-based and simple enough for a university MVP.
+- If the one frame is insufficient to validate accuracy, document the limitation
+  instead of claiming a production-quality metric.
 
-## Pruebas mínimas
+## Acceptance criteria
 
-Agregar pruebas con `unittest` para:
+- [ ] The detector adapter loads a pretrained model and returns person
+  detections in the documented shape.
+- [ ] Only frames with `status = 'pending'` are processed.
+- [ ] The bottom-center point of each detection determines its table.
+- [ ] A table with no assigned detections gets `people_count = 0` and
+  `occupied = false`.
+- [ ] Exactly one observation is written per configured table and frame.
+- [ ] Observation writes and the frame status update are atomic.
+- [ ] Successful frames become `processed`; failed frames become `failed`.
+- [ ] Reprocessing does not create duplicate observations.
+- [ ] `latest_table_state` exposes the generated observations.
+- [ ] The available Roblox frame is processed successfully end to end.
 
-- Inferencia mockeada con detección positiva -> Genera un registro en `table_observations` con `occupied = true`.
-- Inferencia mockeada con detección vacía -> Genera un registro en `table_observations` con `occupied = false` y `people_count = 0`.
-- Frame inexistente o ilegible en disco -> El estado del frame cambia a `failed`.
-- Prueba de colisión matemática: asegurar que la lógica del polígono evalúa si un punto de coordenada está o no dentro de la mesa.
-- Prueba de que un frame procesado no vuelve a entrar en la consulta de
-  pendientes.
+## Minimum tests
 
-## Cómo ejecutar
+Keep the existing mock-based tests and add or complete tests for:
 
-Desde la raíz del repositorio, levantar todo:
+- positive person detection assigned to the expected table;
+- no detections producing a free table;
+- detections outside all polygons being ignored;
+- pending frames being processed while processed/failed frames are skipped;
+- inference failure marking the frame as `failed`;
+- duplicate processing respecting the `(frame_id, table_id)` constraint;
+- the real available frame producing database rows.
+
+Run the dependency-aware suite inside the application container:
 
 ```bash
 docker compose up --build -d
+docker compose exec worker python -m unittest discover -v
 ```
 
-Validar los logs del worker para ver que la inferencia sucede:
+## Manual verification
 
 ```bash
 docker compose logs -f worker
+curl http://localhost:8000/health
+curl http://localhost:8000/api/tables/latest
 ```
 
-Simular entrada:
+Inspect PostgreSQL after processing the input frame:
 
 ```bash
-cp /ruta/a/captura.png data/inbox/
+docker compose exec db psql -U restaurant -d restaurant_tracker -c \
+  "SELECT id, status, source_path FROM media_inputs ORDER BY id;"
+
+docker compose exec db psql -U restaurant -d restaurant_tracker -c \
+  "SELECT frame_id, table_id, people_count, occupied, confidence, model_version FROM table_observations ORDER BY frame_id, table_id;"
 ```
 
-Revisar la base de datos y comprobar que `table_observations` se puebla correctamente tras la ingestión.
+## Handoff to Umizumi 4
 
-## Entrega al siguiente Umizumi (Umizumi 4)
+Deliver:
 
-El handoff final para Umizumi 4 debe incluir:
+- modified files and commit hash;
+- model name/version and confidence threshold;
+- test output;
+- proof that `table_observations` and `latest_table_state` contain data;
+- known limitations from using a single Roblox frame.
 
-- Archivos modificados en este paso.
-- Resultados de pruebas que corroboren que `table_observations` tiene data real o útil.
-- Confirmación de que la vista de PostgreSQL `latest_table_state` arroja la data generada.
-- Cualquier limitación (por ejemplo, FPS reales de procesamiento del modelo).
-
-La salida de Umizumi 3 es el corazón del sistema: la vista `latest_table_state` completamente poblada, lista para ser consumida por el backend de Flask en Umizumi 4.
+Umizumi 4 can then connect the existing Flask API and 30-second dashboard
+polling to the populated `latest_table_state` view.
