@@ -35,6 +35,7 @@ services:
     environment:
       INPUT_DIR: /app/data/inbox
       INGEST_POLL_SECONDS: 30
+      DATABASE_URL: postgresql://${POSTGRES_USER:-restaurant}:${POSTGRES_PASSWORD:-restaurant_dev}@db:5432/${POSTGRES_DB:-restaurant_tracker}
     depends_on:
       db:
         condition: service_healthy
