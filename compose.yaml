@@ -35,7 +35,6 @@ services:
     environment:
       INPUT_DIR: /app/data/inbox
       PROCESSED_DIR: /app/data/processed
-      INGEST_POLL_SECONDS: ${INGEST_POLL_SECONDS:-30}
       FRAME_INTERVAL_SECONDS: ${FRAME_INTERVAL_SECONDS:-30}
       DATABASE_URL: postgresql://${POSTGRES_USER:-restaurant}:${POSTGRES_PASSWORD:-restaurant_dev}@db:5432/${POSTGRES_DB:-restaurant_tracker}
     depends_on:

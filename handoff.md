@@ -34,6 +34,8 @@ Ya existe el scaffold inicial:
 - `requirements.txt` incluye Flask, `psycopg` y OpenCV para ingestión y vídeo.
 - `app/worker.py` detecta archivos nuevos, calcula SHA-256, persiste medios y
   genera frames para imágenes y vídeos.
+- La ingesta es ETL batch: primero transforma los medios a frames y después
+  carga `media_inputs` y `frames`; no mantiene un proceso de polling.
 - `app/vision.py` contiene la asociación por punto inferior central y la
   generación de observaciones por mesa.
 - `app/db.py` expone consultas de frames pendientes, mesas y carga transaccional
@@ -134,7 +136,7 @@ Los medios corruptos o no procesables deben quedar con `status = failed` y
 
 Punto de entrada actual:
 
-- `app/worker.py`: ciclo de polling y coordinación.
+- `app/worker.py`: script ETL batch y coordinación de frames pendientes.
 - `app/media.py`: clasificación de medios; extenderlo solo si hace falta.
 - `app/db.py`: conexión a PostgreSQL; agregar únicamente las consultas mínimas.
 - `db/schema.sql`: contrato de `media_inputs` y `frames`.
@@ -154,7 +156,7 @@ capa adicional si la lógica cabe en `app/media.py` y `app/worker.py`.
 - [ ] Un archivo no soportado se ignora y no detiene el worker.
 - [ ] Un `.mp4` válido genera frames según el intervalo configurado.
 - [ ] Los frames entregados a Umizumi 3 tienen `status = pending`.
-- [ ] El worker continúa procesando los archivos restantes después de un error.
+- [ ] El script continúa procesando los archivos restantes después de un error.
 - [ ] El procesamiento es reproducible al reiniciar el worker.
 - [ ] Las pruebas unitarias y la prueba manual con Docker quedan documentadas.
 - [x] La imagen base se construye y los tres servicios inician con Docker
@@ -178,15 +180,14 @@ un dataset grande.
 Desde la raíz del repositorio:
 
 ```bash
-docker compose up --build -d
+docker compose up --build -d db web
+docker compose run --rm worker python -m app.worker
 ```
 
-En otra terminal:
+Para inspeccionar la API después de la ingesta:
 
 ```bash
 docker compose ps
-docker compose logs -f worker
-cp /ruta/a/captura.png data/inbox/
 curl http://localhost:8000/health
 curl http://localhost:8000/api/tables/latest
 ```
@@ -197,14 +198,14 @@ La respuesta esperada de health check es:
 {"status":"ok"}
 ```
 
-Para las pruebas locales que no requieren Docker:
+Para las pruebas dentro del contenedor de aplicación:
 
 ```bash
-python3 -m unittest discover -v
+docker compose run --rm worker python -m unittest discover -v
 ```
 
 La prueba base de Docker ya fue validada. La prueba end-to-end de una imagen
-todavía queda pendiente porque el worker aún no inserta medios ni frames.
+todavía queda pendiente porque la inferencia del modelo aún no está integrada.
 
 ## Entrega al siguiente Umizumi
 

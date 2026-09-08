@@ -24,10 +24,10 @@ Dashboard: <http://localhost:8000>
 
 Health check: <http://localhost:8000/health>
 
-Pruebas dentro del contenedor de aplicación:
+Pruebas dentro de un contenedor temporal de aplicación:
 
 ```bash
-docker compose exec worker python -m unittest discover -v
+docker compose run --rm worker python -m unittest discover -v
 ```
 
 ## Entrada
@@ -38,11 +38,16 @@ Colocar imágenes `.jpg`, `.jpeg` o `.png`, o vídeos `.mp4`, en:
 data/inbox/
 ```
 
-El worker revisa la carpeta cada 30 segundos, calcula SHA-256, registra cada
-medio una sola vez y guarda los frames normalizados en
-`data/processed/<media_hash>/`. Las imágenes producen un frame; los vídeos
-producen frames cada 30 segundos. Los frames quedan en estado `pending` para
-la inferencia posterior.
+El worker es un script ETL batch: procesa una vez el contenido actual de la
+carpeta, calcula SHA-256, transforma cada medio y solo después carga sus
+metadatos y frames en PostgreSQL. Las imágenes producen un frame; los vídeos
+producen frames cada `FRAME_INTERVAL_SECONDS`. Los frames quedan en estado
+`pending` para la inferencia posterior. Para procesar nuevas entradas se vuelve
+a ejecutar el script:
+
+```bash
+docker compose run --rm worker python -m app.worker
+```
 
 La detección con YOLO todavía no está integrada. El siguiente handoff reutiliza
 los frames pendientes y la lógica de asociación geométrica ya disponible.

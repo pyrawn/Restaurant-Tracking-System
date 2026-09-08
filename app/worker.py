@@ -1,8 +1,6 @@
 import hashlib
 import logging
 import os
-import shutil
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,14 +9,14 @@ import cv2
 from app.db import (
     fetch_pending_frames,
     fetch_tables,
-    insert_frame,
-    insert_media_input,
+    load_media_and_frames,
     mark_frame_failed,
+    media_input_exists,
     save_frame_observations,
-    update_media_input_status,
 )
 from app.media import media_type
 from app.vision import build_table_observations
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -28,8 +26,8 @@ FRAME_INTERVAL_SECONDS = 30
 
 def get_file_hash(path: Path) -> str:
     sha256 = hashlib.sha256()
-    with open(path, "rb") as f:
-        while chunk := f.read(8192):
+    with path.open("rb") as file:
+        while chunk := file.read(8192):
             sha256.update(chunk)
     return sha256.hexdigest()
 
@@ -41,54 +39,117 @@ def get_frame_interval_seconds() -> int:
     return interval
 
 
-def process_image(media_input_id: int, path: Path, media_hash: str, processed_dir: str):
-    img = cv2.imread(str(path))
-    if img is None:
+def process_image(path: Path, media_hash: str, processed_dir: str) -> list[dict]:
+    image = cv2.imread(str(path))
+    if image is None:
         raise ValueError("Failed to read image")
-    
+
     out_dir = Path(processed_dir) / media_hash
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "0.jpg"
-    
-    if not cv2.imwrite(str(out_path), img):
+    if not cv2.imwrite(str(out_path), image):
         raise ValueError("Failed to write normalized image")
-    
-    captured_at = datetime.now(timezone.utc)
-    insert_frame(media_input_id, 0, 0, str(out_path), captured_at)
+
+    return [{
+        "frame_index": 0,
+        "offset_ms": 0,
+        "image_path": str(out_path),
+        "captured_at": datetime.now(timezone.utc),
+    }]
 
 
-def process_video(media_input_id: int, path: Path, media_hash: str, processed_dir: str):
-    cap = cv2.VideoCapture(str(path))
-    if not cap.isOpened():
+def process_video(path: Path, media_hash: str, processed_dir: str) -> list[dict]:
+    interval_ms = get_frame_interval_seconds() * 1000
+    capture = cv2.VideoCapture(str(path))
+    if not capture.isOpened():
         raise ValueError("Failed to open video")
-    
+
     out_dir = Path(processed_dir) / media_hash
     out_dir.mkdir(parents=True, exist_ok=True)
-    
-    frame_index = 0
+    artifacts = []
     captured_at = datetime.now(timezone.utc)
-    interval_ms = get_frame_interval_seconds() * 1000
-    
-    while True:
-        # Calculate frame position
-        offset_ms = frame_index * interval_ms
-        cap.set(cv2.CAP_PROP_POS_MSEC, offset_ms)
-        
-        ret, frame = cap.read()
-        if not ret:
-            break
-            
-        out_path = out_dir / f"{frame_index}.jpg"
-        if not cv2.imwrite(str(out_path), frame):
-            raise ValueError("Failed to write normalized video frame")
-        
-        insert_frame(media_input_id, frame_index, int(offset_ms), str(out_path), captured_at)
-        frame_index += 1
-        
-    cap.release()
-    
-    if frame_index == 0:
+
+    try:
+        while True:
+            offset_ms = len(artifacts) * interval_ms
+            capture.set(cv2.CAP_PROP_POS_MSEC, offset_ms)
+            success, frame = capture.read()
+            if not success:
+                break
+
+            out_path = out_dir / f"{len(artifacts)}.jpg"
+            if not cv2.imwrite(str(out_path), frame):
+                raise ValueError("Failed to write normalized video frame")
+            artifacts.append({
+                "frame_index": len(artifacts),
+                "offset_ms": offset_ms,
+                "image_path": str(out_path),
+                "captured_at": captured_at,
+            })
+    finally:
+        capture.release()
+
+    if not artifacts:
         raise ValueError("No frames could be extracted from the video")
+    return artifacts
+
+
+def transform_media(kind: str, path: Path, media_hash: str, processed_dir: str) -> list[dict]:
+    if kind == "image":
+        return process_image(path, media_hash, processed_dir)
+    return process_video(path, media_hash, processed_dir)
+
+
+def ingest_path(path: Path, processed_dir: str) -> bool:
+    try:
+        kind = media_type(str(path))
+    except ValueError as error:
+        logger.warning("ignored unsupported file %s: %s", path.name, error)
+        return False
+
+    try:
+        media_hash = get_file_hash(path)
+    except OSError as error:
+        logger.error("failed to read %s for hashing: %s", path.name, error)
+        return False
+
+    try:
+        already_loaded = media_input_exists(media_hash)
+    except Exception as error:
+        logger.error("failed to check duplicate %s: %s", path.name, error)
+        return False
+
+    if already_loaded:
+        logger.info("ignored duplicate file: %s", path.name)
+        return False
+
+    try:
+        artifacts = transform_media(kind, path, media_hash, processed_dir)
+    except Exception as error:
+        logger.error("failed to transform %s: %s", path.name, error)
+        try:
+            load_media_and_frames(
+                kind,
+                str(path),
+                media_hash,
+                [],
+                status="failed",
+                error_message=str(error),
+            )
+        except Exception:
+            logger.exception("failed to record failed input %s", path.name)
+        return False
+
+    try:
+        media_input_id = load_media_and_frames(kind, str(path), media_hash, artifacts)
+    except Exception:
+        logger.exception("failed to load transformed input %s", path.name)
+        return False
+    if media_input_id is None:
+        logger.info("ignored duplicate file during load: %s", path.name)
+        return False
+    logger.info("loaded %s input with %s frame(s): %s", kind, len(artifacts), path.name)
+    return True
 
 
 def process_pending_frames(detector, model_version: str) -> None:
@@ -109,54 +170,16 @@ def discover_media(input_dir: str) -> list[Path]:
     return sorted(path for path in directory.iterdir() if path.is_file())
 
 
-def main() -> None:
+def main() -> int:
     input_dir = os.getenv("INPUT_DIR", "data/inbox")
     processed_dir = os.getenv("PROCESSED_DIR", "data/processed")
-    poll_seconds = int(os.getenv("INGEST_POLL_SECONDS", "30"))
-    seen: set[Path] = set()
-
-    logger.info("worker ready; watching %s every %ss", input_dir, poll_seconds)
-    while True:
-        for path in discover_media(input_dir):
-            if path in seen:
-                continue
-            
-            try:
-                kind = media_type(str(path))
-            except ValueError:
-                logger.warning("ignored unsupported file: %s", path.name)
-                seen.add(path)
-                continue
-            
-            try:
-                media_hash = get_file_hash(path)
-            except Exception as e:
-                logger.error("Failed to hash file %s: %s", path.name, e)
-                seen.add(path)
-                continue
-
-            media_input_id = insert_media_input(kind, str(path), media_hash)
-            
-            if media_input_id is None:
-                logger.info("Ignored duplicate file: %s", path.name)
-                seen.add(path)
-                continue
-                
-            logger.info("Processing %s input: %s (id: %s)", kind, path.name, media_input_id)
-            try:
-                if kind == "image":
-                    process_image(media_input_id, path, media_hash, processed_dir)
-                elif kind == "video":
-                    process_video(media_input_id, path, media_hash, processed_dir)
-                update_media_input_status(media_input_id, "processed")
-                logger.info("Successfully processed %s", path.name)
-            except Exception as e:
-                logger.error("Failed to process %s: %s", path.name, e)
-                update_media_input_status(media_input_id, "failed", str(e))
-                
-            seen.add(path)
-        time.sleep(poll_seconds)
+    paths = discover_media(input_dir)
+    logger.info("starting one-shot ETL for %s input file(s)", len(paths))
+    for path in paths:
+        ingest_path(path, processed_dir)
+    logger.info("one-shot ETL finished")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

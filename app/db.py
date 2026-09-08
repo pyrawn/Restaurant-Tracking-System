@@ -42,38 +42,57 @@ def fetch_latest_table_state() -> list[dict]:
     ]
 
 
-def insert_media_input(media_type: str, source_path: str, media_hash: str) -> int | None:
+def media_input_exists(media_hash: str) -> bool:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT 1 FROM media_inputs WHERE media_hash = %s",
+                (media_hash,),
+            )
+            return cursor.fetchone() is not None
+
+
+def load_media_and_frames(
+    media_type: str,
+    source_path: str,
+    media_hash: str,
+    frames: list[dict],
+    status: str = "processed",
+    error_message: str | None = None,
+) -> int | None:
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO media_inputs (media_type, source_path, media_hash)
-                VALUES (%s, %s, %s)
+                INSERT INTO media_inputs
+                    (media_type, source_path, media_hash, status, error_message)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (media_hash) DO NOTHING
                 RETURNING id
                 """,
-                (media_type, source_path, media_hash),
+                (media_type, source_path, media_hash, status, error_message),
             )
             row = cursor.fetchone()
-            return row[0] if row else None
+            if row is None:
+                return None
 
-
-def update_media_input_status(media_input_id: int, status: str, error_message: str | None = None) -> None:
-    with get_connection() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE media_inputs SET status = %s, error_message = %s WHERE id = %s",
-                (status, error_message, media_input_id),
-            )
-
-
-def insert_frame(media_input_id: int, frame_index: int, offset_ms: int, image_path: str, captured_at: datetime) -> None:
-    with get_connection() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "INSERT INTO frames (media_input_id, frame_index, offset_ms, image_path, captured_at) VALUES (%s, %s, %s, %s, %s)",
-                (media_input_id, frame_index, offset_ms, image_path, captured_at),
-            )
+            media_input_id = row[0]
+            for frame in frames:
+                cursor.execute(
+                    """
+                    INSERT INTO frames
+                        (media_input_id, frame_index, offset_ms, image_path, captured_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (
+                        media_input_id,
+                        frame["frame_index"],
+                        frame["offset_ms"],
+                        frame["image_path"],
+                        frame["captured_at"],
+                    ),
+                )
+            return media_input_id
 
 
 def fetch_pending_frames() -> list[dict]:

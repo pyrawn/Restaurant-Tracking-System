@@ -19,6 +19,8 @@ Umizumi 2 has completed the image-independent pipeline work:
 
 - The `worker` reads `.jpg`, `.jpeg`, `.png`, and `.mp4` files from
   `data/inbox/`.
+- Ingestion is a one-shot ETL batch: media is transformed into normalized
+  frames before `media_inputs` and `frames` are loaded into PostgreSQL.
 - Each input is identified with SHA-256 and inserted into `media_inputs` only
   once.
 - Images are validated with OpenCV and normalized to
@@ -27,7 +29,7 @@ Umizumi 2 has completed the image-independent pipeline work:
   numbered JPEG frames.
 - Every normalized frame is inserted into `frames` with `status = 'pending'`.
 - The worker receives `DATABASE_URL`, `INPUT_DIR`, `PROCESSED_DIR`,
-  `INGEST_POLL_SECONDS`, and `FRAME_INTERVAL_SECONDS` through Compose.
+  and `FRAME_INTERVAL_SECONDS` through Compose.
 - `app/vision.py` assigns detections to tables using the bottom-center point of
   each bounding box and returns one observation per configured table.
 - `app/db.py` provides pending-frame queries, table queries, idempotent media
@@ -170,17 +172,17 @@ Keep the existing mock-based tests and add or complete tests for:
 - duplicate processing respecting the `(frame_id, table_id)` constraint;
 - the real available frame producing database rows.
 
-Run the dependency-aware suite inside the application container:
+Run the dependency-aware suite inside a temporary application container:
 
 ```bash
-docker compose up --build -d
-docker compose exec worker python -m unittest discover -v
+docker compose up --build -d db
+docker compose run --rm worker python -m unittest discover -v
 ```
 
 ## Manual verification
 
 ```bash
-docker compose logs -f worker
+docker compose run --rm worker python -m app.worker
 curl http://localhost:8000/health
 curl http://localhost:8000/api/tables/latest
 ```
