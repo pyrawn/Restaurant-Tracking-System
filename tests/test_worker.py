@@ -8,6 +8,8 @@ from app.worker import (
     get_file_hash,
     process_image,
     process_video,
+    process_pending_frames,
+    get_frame_interval_seconds,
     main,
     FRAME_INTERVAL_SECONDS
 )
@@ -31,8 +33,8 @@ class WorkerTests(unittest.TestCase):
 
     @patch("app.worker.insert_frame")
     @patch("app.worker.cv2.imread")
-    @patch("app.worker.shutil.copy2")
-    def test_process_image_valid(self, mock_copy2, mock_imread, mock_insert_frame):
+    @patch("app.worker.cv2.imwrite", return_value=True)
+    def test_process_image_valid(self, mock_imwrite, mock_imread, mock_insert_frame):
         # Setup mock valid image
         mock_imread.return_value = "dummy_img_data"
         
@@ -43,7 +45,7 @@ class WorkerTests(unittest.TestCase):
         process_image(1, test_file, media_hash, str(self.processed_dir))
         
         # Verify
-        mock_copy2.assert_called_once()
+        mock_imwrite.assert_called_once()
         mock_insert_frame.assert_called_once()
         args = mock_insert_frame.call_args[0]
         self.assertEqual(args[0], 1) # media_input_id
@@ -103,6 +105,31 @@ class WorkerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             process_video(2, test_file, "hash", str(self.processed_dir))
 
+    @patch("app.worker.fetch_pending_frames")
+    @patch("app.worker.fetch_tables")
+    @patch("app.worker.save_frame_observations")
+    @patch("app.worker.mark_frame_failed")
+    def test_process_pending_frames_uses_injected_detector(
+        self, mock_mark_failed, mock_save, mock_tables, mock_frames
+    ):
+        mock_frames.return_value = [{"id": 7, "image_path": "frame.jpg"}]
+        mock_tables.return_value = [{
+            "id": 1,
+            "polygon": [[0, 0], [10, 0], [10, 10], [0, 10]],
+        }]
+        detector = lambda path: [{"box": [1, 1, 3, 4], "confidence": 0.9}]
+
+        process_pending_frames(detector, "mock-v1")
+
+        mock_save.assert_called_once()
+        self.assertEqual(mock_save.call_args.args[0], 7)
+        self.assertEqual(mock_save.call_args.args[1][0]["people_count"], 1)
+        mock_mark_failed.assert_not_called()
+
+    def test_frame_interval_reads_environment(self):
+        with patch.dict(os.environ, {"FRAME_INTERVAL_SECONDS": "5"}):
+            self.assertEqual(get_frame_interval_seconds(), 5)
+
     @patch("app.worker.time.sleep", side_effect=InterruptedError("stop loop"))
     @patch("app.worker.insert_media_input")
     @patch("app.worker.update_media_input_status")
@@ -140,4 +167,3 @@ class WorkerTests(unittest.TestCase):
         # Duplicate should not trigger processing
         # Unsupported should not even trigger insert
         self.assertEqual(mock_insert.call_count, 2) # Only valid and dup got to insert
-

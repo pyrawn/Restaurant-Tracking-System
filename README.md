@@ -1,6 +1,6 @@
 # Restaurant Tracking System
 
-Scaffold inicial del proyecto Umizumi para monitorear mesas de un restaurante
+Pipeline inicial del proyecto Umizumi para monitorear mesas de un restaurante
 en Roblox.
 
 ## Stack
@@ -8,7 +8,8 @@ en Roblox.
 - Python 3.12
 - Flask + HTML/CSS/JavaScript nativo
 - PostgreSQL
-- OpenCV y Ultralytics para los siguientes handoffs de visión
+- OpenCV para ingestión y extracción de frames
+- Ultralytics para el siguiente handoff de inferencia
 - Docker Compose
 
 ## Arranque
@@ -23,24 +24,28 @@ Dashboard: <http://localhost:8000>
 
 Health check: <http://localhost:8000/health>
 
-Prueba local sin Docker:
+Pruebas dentro del contenedor de aplicación:
 
 ```bash
-python3 -m unittest discover -v
+docker compose exec worker python -m unittest discover -v
 ```
 
 ## Entrada
 
-Durante el checkpoint inicial, colocar imágenes `.jpg`, `.jpeg` o `.png` en:
+Colocar imágenes `.jpg`, `.jpeg` o `.png`, o vídeos `.mp4`, en:
 
 ```text
 data/inbox/
 ```
 
-El worker revisa la carpeta cada 30 segundos y registra los archivos
-reconocidos en sus logs. El contrato de medios ya reconoce `.mp4`; el siguiente
-handoff agregará extracción batch de frames con OpenCV y reutilizará la misma
-transformación y carga.
+El worker revisa la carpeta cada 30 segundos, calcula SHA-256, registra cada
+medio una sola vez y guarda los frames normalizados en
+`data/processed/<media_hash>/`. Las imágenes producen un frame; los vídeos
+producen frames cada 30 segundos. Los frames quedan en estado `pending` para
+la inferencia posterior.
+
+La detección con YOLO todavía no está integrada. El siguiente handoff reutiliza
+los frames pendientes y la lógica de asociación geométrica ya disponible.
 
 ## Handoffs Umizumi
 

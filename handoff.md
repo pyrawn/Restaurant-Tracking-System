@@ -4,6 +4,9 @@ Fecha: 2026-09-07
 Proyecto: Restaurant Tracking System  
 Equipo: Umizumi
 
+Estado: Umizumi 2 implementado. Este documento conserva el alcance original;
+el handoff vigente para el siguiente paso es `handoff-to-umizumi-3.md`.
+
 ## Objetivo de este handoff
 
 Implementar la ingestión y normalización de medios para que el pipeline
@@ -28,11 +31,15 @@ Ya existe el scaffold inicial:
 - Carpetas `data/inbox`, `data/processed`, `data/failed` y `data/skins`.
 - Flask con `/health`, `/` y `/api/tables/latest`.
 - Dashboard HTML/CSS/JavaScript con polling cada 30 segundos.
-- `requirements.txt` reducido a Flask y `psycopg` para mantener ligero el
-  scaffold base.
-- `app/worker.py` detecta archivos nuevos y reconoce imágenes o `.mp4`, pero
-  todavía no persiste medios ni genera frames.
-- Pruebas actuales: `4/4` pasan con `python3 -m unittest discover -v`.
+- `requirements.txt` incluye Flask, `psycopg` y OpenCV para ingestión y vídeo.
+- `app/worker.py` detecta archivos nuevos, calcula SHA-256, persiste medios y
+  genera frames para imágenes y vídeos.
+- `app/vision.py` contiene la asociación por punto inferior central y la
+  generación de observaciones por mesa.
+- `app/db.py` expone consultas de frames pendientes, mesas y carga transaccional
+  de observaciones.
+- Pruebas sin dependencias externas: `6/6` pasan; las pruebas que importan
+  OpenCV y psycopg deben ejecutarse dentro del contenedor de aplicación.
 - La configuración base de Docker Compose fue validada: PostgreSQL queda
   `Healthy` y `web`/`worker` inician correctamente.
 
@@ -41,9 +48,9 @@ Commits base:
 - `e00f4be feat: initialize restaurant tracker scaffold`
 - `9f7fa4d test: cover invalid table values`
 
-OpenCV y Ultralytics todavía no están instalados en la imagen base. Se deben
-agregar cuando se implemente procesamiento de vídeo o inferencia; no hace falta
-arrastrar PyTorch al scaffold inicial.
+Ultralytics todavía no está instalado en la imagen. Se debe agregar en
+Umizumi 3 junto con la inferencia; OpenCV ya está disponible para ingestión y
+extracción de frames.
 
 ## No cambiar
 

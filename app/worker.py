@@ -1,15 +1,24 @@
 import hashlib
 import logging
 import os
-import time
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
 
+from app.db import (
+    fetch_pending_frames,
+    fetch_tables,
+    insert_frame,
+    insert_media_input,
+    mark_frame_failed,
+    save_frame_observations,
+    update_media_input_status,
+)
 from app.media import media_type
-from app.db import insert_media_input, update_media_input_status, insert_frame
+from app.vision import build_table_observations
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -25,6 +34,13 @@ def get_file_hash(path: Path) -> str:
     return sha256.hexdigest()
 
 
+def get_frame_interval_seconds() -> int:
+    interval = int(os.getenv("FRAME_INTERVAL_SECONDS", str(FRAME_INTERVAL_SECONDS)))
+    if interval <= 0:
+        raise ValueError("FRAME_INTERVAL_SECONDS must be positive")
+    return interval
+
+
 def process_image(media_input_id: int, path: Path, media_hash: str, processed_dir: str):
     img = cv2.imread(str(path))
     if img is None:
@@ -34,8 +50,8 @@ def process_image(media_input_id: int, path: Path, media_hash: str, processed_di
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "0.jpg"
     
-    # Save the frame
-    shutil.copy2(path, out_path)
+    if not cv2.imwrite(str(out_path), img):
+        raise ValueError("Failed to write normalized image")
     
     captured_at = datetime.now(timezone.utc)
     insert_frame(media_input_id, 0, 0, str(out_path), captured_at)
@@ -46,19 +62,16 @@ def process_video(media_input_id: int, path: Path, media_hash: str, processed_di
     if not cap.isOpened():
         raise ValueError("Failed to open video")
     
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps <= 0:
-        fps = 30.0  # Fallback
-        
     out_dir = Path(processed_dir) / media_hash
     out_dir.mkdir(parents=True, exist_ok=True)
     
     frame_index = 0
     captured_at = datetime.now(timezone.utc)
+    interval_ms = get_frame_interval_seconds() * 1000
     
     while True:
         # Calculate frame position
-        offset_ms = frame_index * FRAME_INTERVAL_SECONDS * 1000
+        offset_ms = frame_index * interval_ms
         cap.set(cv2.CAP_PROP_POS_MSEC, offset_ms)
         
         ret, frame = cap.read()
@@ -66,7 +79,8 @@ def process_video(media_input_id: int, path: Path, media_hash: str, processed_di
             break
             
         out_path = out_dir / f"{frame_index}.jpg"
-        cv2.imwrite(str(out_path), frame)
+        if not cv2.imwrite(str(out_path), frame):
+            raise ValueError("Failed to write normalized video frame")
         
         insert_frame(media_input_id, frame_index, int(offset_ms), str(out_path), captured_at)
         frame_index += 1
@@ -75,6 +89,18 @@ def process_video(media_input_id: int, path: Path, media_hash: str, processed_di
     
     if frame_index == 0:
         raise ValueError("No frames could be extracted from the video")
+
+
+def process_pending_frames(detector, model_version: str) -> None:
+    tables = fetch_tables()
+    for frame in fetch_pending_frames():
+        try:
+            detections = detector(frame["image_path"])
+            observations = build_table_observations(detections, tables, model_version)
+            save_frame_observations(frame["id"], observations)
+        except Exception as error:
+            logger.exception("Failed to transform frame %s", frame["id"])
+            mark_frame_failed(frame["id"], str(error))
 
 
 def discover_media(input_dir: str) -> list[Path]:

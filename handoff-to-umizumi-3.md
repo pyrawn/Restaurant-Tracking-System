@@ -12,7 +12,8 @@ Prioridad inmediata:
 
 1. Leer todos los `frames` en estado `pending`.
 2. Realizar inferencia utilizando un modelo preentrenado.
-3. Evaluar colisiones de centroides con los polígonos de las mesas.
+3. Evaluar el punto inferior central de cada detección contra los polígonos de
+   las mesas.
 4. Generar y persistir las observaciones en la tabla `table_observations`.
 
 ## Estado actual
@@ -25,10 +26,17 @@ Ya existe el pipeline de ingestión y la normalización:
 - Por cada imagen o _frame_ de video normalizado, existe un registro en la tabla `frames` con `status = pending`.
 - La variable de entorno `DATABASE_URL` ya está correctamente configurada para el worker en `compose.yaml`.
 - OpenCV ya está instalado (`opencv-python-headless`) en los requerimientos.
+- `app/vision.py` ya contiene la asociación por punto inferior central y la
+  generación de una observación por mesa.
+- `process_pending_frames(detector, model_version)` ya coordina la lectura de
+  frames pendientes, la transformación y la carga transaccional.
+- La imagen base todavía no instala Ultralytics; la inferencia real queda a
+  cargo de este handoff.
 
 ## No cambiar
 
-- No modificar la lógica de ingestión de medios (`get_file_hash`, `process_image`, `process_video`).
+- No cambiar el contrato de ingestión ni el estado esperado de los frames.
+  Si aparece un bug en la ingestión, corregirlo con una prueba y documentarlo.
 - No alterar las carpetas `data/inbox` ni `data/processed`.
 - No modificar el esquema de `frames` o `media_inputs`.
 - No cambiar la estructura de la base de datos a menos que sea estrictamente necesario para el modelo.
@@ -75,13 +83,16 @@ status = 'processed'
 
 Punto de entrada:
 
-- `app/worker.py`: Añadir la función de coordinación que lea los frames `pending`, llame a la inferencia y escriba los resultados (ej. función `process_pending_frames()`).
-- `app/db.py`: Añadir funciones para obtener frames `pending`, obtener las mesas y persistir las observaciones (`insert_table_observation`).
+- `app/worker.py`: Conectar un detector real a `process_pending_frames()`.
+- `app/vision.py`: Reutilizar `build_table_observations()`; no duplicar la
+  lógica de punto-en-polígono.
+- `app/db.py`: Reutilizar `fetch_pending_frames()`, `fetch_tables()` y
+  `save_frame_observations()`.
 - `requirements.txt`: Agregar `ultralytics` u otras dependencias necesarias para la red neuronal.
 
 ## Criterios de aceptación
 
-- [ ] El worker de Umizumi 3 toma los `frames` en estado `pending` y no procesa los `processed` ni `failed`.
+- [ ] `process_pending_frames()` toma los `frames` en estado `pending` y no procesa los `processed` ni `failed`.
 - [ ] La inferencia identifica personas y utiliza el polígono de las mesas para filtrar a qué mesa pertenece la detección (el punto inferior central cae en el polígono).
 - [ ] Las inserciones a `table_observations` son atómicas (todas las observaciones del frame entran, o ninguna).
 - [ ] Tras un procesamiento exitoso, el frame queda marcado como `processed`.
@@ -95,6 +106,8 @@ Agregar pruebas con `unittest` para:
 - Inferencia mockeada con detección vacía -> Genera un registro en `table_observations` con `occupied = false` y `people_count = 0`.
 - Frame inexistente o ilegible en disco -> El estado del frame cambia a `failed`.
 - Prueba de colisión matemática: asegurar que la lógica del polígono evalúa si un punto de coordenada está o no dentro de la mesa.
+- Prueba de que un frame procesado no vuelve a entrar en la consulta de
+  pendientes.
 
 ## Cómo ejecutar
 

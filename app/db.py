@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import date, datetime
 
@@ -18,6 +19,9 @@ TABLE_STATE_COLUMNS = (
     "assigned_waiter_name",
 )
 
+FRAME_COLUMNS = ("id", "image_path", "media_input_id", "frame_index", "captured_at")
+TABLE_COLUMNS = ("id", "name", "capacity", "polygon")
+
 
 def get_connection():
     return psycopg.connect(os.environ["DATABASE_URL"])
@@ -34,22 +38,25 @@ def fetch_latest_table_state() -> list[dict]:
             column: value.isoformat() if isinstance(value, (date, datetime)) else value
             for column, value in zip(TABLE_STATE_COLUMNS, row)
         }
+        for row in rows
     ]
 
+
 def insert_media_input(media_type: str, source_path: str, media_hash: str) -> int | None:
-    try:
-        with get_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO media_inputs (media_type, source_path, media_hash) VALUES (%s, %s, %s) RETURNING id",
-                    (media_type, source_path, media_hash),
-                )
-                row = cursor.fetchone()
-                if row:
-                    return row[0]
-                return None
-    except psycopg.errors.UniqueViolation:
-        return None
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO media_inputs (media_type, source_path, media_hash)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (media_hash) DO NOTHING
+                RETURNING id
+                """,
+                (media_type, source_path, media_hash),
+            )
+            row = cursor.fetchone()
+            return row[0] if row else None
+
 
 def update_media_input_status(media_input_id: int, status: str, error_message: str | None = None) -> None:
     with get_connection() as connection:
@@ -59,10 +66,81 @@ def update_media_input_status(media_input_id: int, status: str, error_message: s
                 (status, error_message, media_input_id),
             )
 
+
 def insert_frame(media_input_id: int, frame_index: int, offset_ms: int, image_path: str, captured_at: datetime) -> None:
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO frames (media_input_id, frame_index, offset_ms, image_path, captured_at) VALUES (%s, %s, %s, %s, %s)",
                 (media_input_id, frame_index, offset_ms, image_path, captured_at),
+            )
+
+
+def fetch_pending_frames() -> list[dict]:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, image_path, media_input_id, frame_index, captured_at
+                FROM frames
+                WHERE status = 'pending'
+                ORDER BY id
+                """
+            )
+            rows = cursor.fetchall()
+    return [dict(zip(FRAME_COLUMNS, row)) for row in rows]
+
+
+def fetch_tables() -> list[dict]:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id, name, capacity, polygon FROM tables ORDER BY id")
+            rows = cursor.fetchall()
+
+    tables = []
+    for row in rows:
+        table = dict(zip(TABLE_COLUMNS, row))
+        if isinstance(table["polygon"], str):
+            table["polygon"] = json.loads(table["polygon"])
+        tables.append(table)
+    return tables
+
+
+def save_frame_observations(frame_id: int, observations: list[dict]) -> None:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            for observation in observations:
+                cursor.execute(
+                    """
+                    INSERT INTO table_observations
+                        (frame_id, table_id, people_count, occupied, confidence,
+                         detected_waiter_id, model_version)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (frame_id, table_id) DO UPDATE SET
+                        people_count = EXCLUDED.people_count,
+                        occupied = EXCLUDED.occupied,
+                        confidence = EXCLUDED.confidence,
+                        detected_waiter_id = EXCLUDED.detected_waiter_id,
+                        model_version = EXCLUDED.model_version,
+                        processed_at = NOW()
+                    """,
+                    (
+                        frame_id,
+                        observation["table_id"],
+                        observation["people_count"],
+                        observation["occupied"],
+                        observation["confidence"],
+                        observation.get("detected_waiter_id"),
+                        observation["model_version"],
+                    ),
+                )
+            cursor.execute("UPDATE frames SET status = 'processed' WHERE id = %s", (frame_id,))
+
+
+def mark_frame_failed(frame_id: int, error_message: str) -> None:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE frames SET status = 'failed' WHERE id = %s",
+                (frame_id,),
             )
