@@ -40,7 +40,7 @@ Umizumi 2 has completed the image-independent pipeline work:
 - The base image includes Flask, psycopg, and OpenCV. Ultralytics is not
   installed yet because it brings heavy ML dependencies and was not needed for
   ingestion.
-- A clean implementation commit is `e6cdd4f`.
+- The batch ETL implementation is in commit `d720d35`.
 
 ## Available input
 
@@ -50,9 +50,32 @@ There is currently one image frame in:
 data/inbox/WhatsApp Image 2026-09-07 at 7.32.40 PM.jpeg
 ```
 
-Use this file to iterate on the detector and end-to-end flow. The file is a
-local input fixture and may not be included in a Git clone unless it is shared
-or committed separately. There is no labeled dataset yet.
+This file is currently committed in the repository. Use it to iterate on the
+detector and the end-to-end flow. There is no labeled dataset yet.
+
+## Ingestion result
+
+Running `python -m app.worker` performs one batch ETL run and then exits. For
+the image above, ingestion produces:
+
+```text
+data/processed/<media_hash>/0.jpg
+```
+
+It then loads PostgreSQL only after the frame has been transformed:
+
+```text
+media_inputs: one row with status = 'processed'
+frames:       one row with status = 'pending'
+```
+
+For a video, the same process creates one normalized JPEG and one `frames` row
+per sampled frame. Ingestion does not produce `people_count`, `occupied`, or
+waiter results; those belong to model inference. PostgreSQL is the load and
+storage stage of this ETL pipeline, not a transformation stage.
+
+If the same file is run again, its SHA-256 hash is recognized and the input is
+skipped to avoid duplicate media and frames.
 
 ## Scope for Umizumi 3
 
@@ -105,7 +128,7 @@ table_id           = <configured table id>
 people_count       = <detections assigned to the table>
 occupied           = <true when people_count > 0>
 confidence         = <value between 0 and 1>
-detected_waiter_id = <waiter id when implemented, otherwise NULL>
+detected_waiter_id = NULL for the MVP; waiter assignments use fixed seeded data
 model_version      = <fixed or configured model version>
 ```
 
@@ -139,7 +162,8 @@ status in one transaction.
 - Do not use Streamlit, Kafka, Airflow, Redis, Celery, a data lake, WebSockets,
   or another service.
 - Do not modify Flask or the dashboard; that belongs to Umizumi 4.
-- Waiters and skins remain fixed; there is no waiter CRUD.
+- Waiters and skins remain fixed seeded/configured values; do not build waiter
+  recognition or waiter CRUD for this MVP.
 - Do not train a neural network from scratch.
 - Keep the inference path batch-based and simple enough for a university MVP.
 - If the one frame is insufficient to validate accuracy, document the limitation
