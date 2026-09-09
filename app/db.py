@@ -19,9 +19,21 @@ TABLE_STATE_COLUMNS = (
 FRAME_COLUMNS = ("id", "image_path", "media_input_id", "frame_index", "captured_at")
 TABLE_COLUMNS = ("id", "name", "capacity", "polygon")
 
+HISTORY_COLUMNS = ("table_id", "table_name", "people_count", "occupied", "processed_at")
+
 
 def get_connection():
     return psycopg.connect(os.environ["DATABASE_URL"])
+
+
+    def _rows_to_dicts(rows, columns):
+    return [
+        {
+            column: value.isoformat() if isinstance(value, (date, datetime)) else value
+            for column, value in zip(columns, row)
+        }
+        for row in rows
+    ]
 
 
 def fetch_latest_table_state() -> list[dict]:
@@ -30,13 +42,25 @@ def fetch_latest_table_state() -> list[dict]:
             cursor.execute("SELECT * FROM latest_table_state ORDER BY table_id")
             rows = cursor.fetchall()
 
-    return [
-        {
-            column: value.isoformat() if isinstance(value, (date, datetime)) else value
-            for column, value in zip(TABLE_STATE_COLUMNS, row)
-        }
-        for row in rows
-    ]
+    return _rows_to_dicts(rows, TABLE_STATE_COLUMNS)
+
+
+def fetch_observation_history(hours: int = 3) -> list[dict]:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT t.id, t.name, o.people_count, o.occupied, o.processed_at
+                FROM table_observations AS o
+                JOIN tables AS t ON t.id = o.table_id
+                WHERE o.processed_at >= NOW() - make_interval(hours => %s)
+                ORDER BY o.processed_at
+                """,
+                (hours,),
+            )
+            rows = cursor.fetchall()
+
+    return _rows_to_dicts(rows, HISTORY_COLUMNS)
 
 
 def media_input_exists(media_hash: str) -> bool:
