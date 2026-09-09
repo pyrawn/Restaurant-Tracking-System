@@ -24,12 +24,19 @@ for continuous/live operation, and there are two concrete data-quality gaps
 
 ## Current state
 
-The implementation commit for this handoff is `7c3cac8`.
+The implementation commits for this handoff span `7c3cac8`..`783d443`
+(see git log on this branch for the full sequence — waiter removal,
+threshold tuning, table calibration, and the model swap all landed as
+separate commits after live testing surfaced each issue).
 
-- `app/detector.py`: loads a YOLOv8-nano checkpoint (Ultralytics),
+- `app/detector.py`: loads a YOLOv8-small checkpoint (Ultralytics),
   filters detections to the COCO "person" class, respects `MODEL_PATH`
-  and `CONFIDENCE_THRESHOLD` env vars (defaults `/app/models/model.pt`,
-  `0.5`). The checkpoint is baked into the Docker image at build time.
+  and `CONFIDENCE_THRESHOLD` env vars (defaults `/app/models/yolov8s.pt`,
+  `0.25`). The checkpoint is baked into the Docker image at build time.
+  Started as yolov8n at threshold 0.5 — both were changed after live
+  testing (see "Verification performed" below) showed real detections on
+  this camera landing at low confidence and yolov8n undercounting people
+  in dense clusters compared to yolov8s.
 - `app/worker.py`: `main()` now ingests `data/inbox/` **and** runs
   `process_pending_frames()` with the real detector in the same one-shot
   pass. `process_pending_frames()` now returns a summary list
@@ -107,7 +114,7 @@ photos (COCO), and stylized/blocky game avatars are a domain mismatch it
 wasn't trained for.
 
 **API/dashboard check**: `curl http://localhost:8000/api/tables/latest`
-returns the real observations with correct `model_version` (`yolo:model`)
+returns the real observations with correct `model_version` (`yolo:yolov8s`)
 and `processed_at`, confirming the existing Flask scaffold from Umizumi 1
 already serves live pipeline output correctly with zero changes needed.
 
@@ -150,6 +157,20 @@ already serves live pipeline output correctly with zero changes needed.
    `skin_reference_path`, and `data/skins/` are all gone — from the schema,
    the seed data, `app/db.py`, `app/vision.py`, the dashboard JS, and the
    design spec. Umizumi 4 should not reintroduce any of this.
+5. **People counts undercount in dense, overlapping clusters — this is a
+   model-capacity ceiling, not a bug.** When the project owner manually
+   counted 7 people at one table in a live frame, the pipeline reported far
+   fewer. Investigated by running yolov8n, yolov8s, and yolov8m against the
+   identical frame at a permissive confidence floor: yolov8n found ~3
+   distinct people, yolov8s found ~4, yolov8m found ~4 (different ones,
+   16x slower). None got close to 7. Overlapping bounding boxes in a
+   shoulder-to-shoulder crowd get merged or suppressed by NMS regardless of
+   model size — this is a known failure mode for general-purpose
+   COCO-pretrained detectors, not something further threshold tuning or a
+   bigger stock model fixes. yolov8s was kept as the best speed/accuracy
+   trade-off found. If Umizumi 4 needs materially better crowd recall, the
+   next real lever is fine-tuning on labeled frames from this specific
+   camera, not swapping stock checkpoints.
 
 ## Scope for Umizumi 4
 
