@@ -108,10 +108,12 @@ class WorkerTests(unittest.TestCase):
         }]
         detector = lambda path: [{"box": [1, 1, 3, 4], "confidence": 0.9}]
 
-        process_pending_frames(detector, "mock-v1")
+        results = process_pending_frames(detector, "mock-v1")
 
         mock_save.assert_called_once()
         self.assertEqual(mock_save.call_args.args[0], 7)
+        self.assertEqual(results[0]["frame_id"], 7)
+        self.assertEqual(results[0]["person_detections"], 1)
         self.assertEqual(mock_save.call_args.args[1][0]["people_count"], 1)
         mock_mark_failed.assert_not_called()
 
@@ -160,11 +162,18 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(mock_load.call_args.args[3], [])
         self.assertEqual(mock_load.call_args.kwargs["status"], "failed")
 
+    @patch("app.worker.process_pending_frames", return_value=[])
+    @patch("app.worker.model_version_from_path", return_value="mock-v1")
+    @patch("app.worker.load_detector")
     @patch("app.worker.ingest_path")
     @patch("app.worker.discover_media")
-    def test_main_processes_inbox_once(self, mock_discover, mock_ingest):
+    def test_main_processes_inbox_once(
+        self, mock_discover, mock_ingest, mock_load_detector, mock_model_version, mock_process
+    ):
         paths = [self.inbox_dir / "one.jpg"]
         mock_discover.return_value = paths
+        mock_detector = MagicMock()
+        mock_load_detector.return_value = mock_detector
 
         with patch.dict(os.environ, {
             "INPUT_DIR": str(self.inbox_dir),
@@ -174,3 +183,4 @@ class WorkerTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         mock_ingest.assert_called_once_with(paths[0], str(self.processed_dir))
+        mock_process.assert_called_once_with(mock_detector, "mock-v1")
