@@ -14,6 +14,7 @@ from app.db import (
     media_input_exists,
     save_frame_observations,
 )
+from app.detector import load_detector, model_version_from_path
 from app.media import media_type
 from app.vision import build_table_observations
 
@@ -152,16 +153,24 @@ def ingest_path(path: Path, processed_dir: str) -> bool:
     return True
 
 
-def process_pending_frames(detector, model_version: str) -> None:
+def process_pending_frames(detector, model_version: str) -> list[dict]:
     tables = fetch_tables()
+    results = []
     for frame in fetch_pending_frames():
         try:
             detections = detector(frame["image_path"])
             observations = build_table_observations(detections, tables, model_version)
             save_frame_observations(frame["id"], observations)
+            results.append({
+                "frame_id": frame["id"],
+                "image_path": frame["image_path"],
+                "person_detections": len(detections),
+                "observations": observations,
+            })
         except Exception as error:
             logger.exception("Failed to transform frame %s", frame["id"])
             mark_frame_failed(frame["id"], str(error))
+    return results
 
 
 def discover_media(input_dir: str) -> list[Path]:
@@ -177,6 +186,12 @@ def main() -> int:
     logger.info("starting one-shot ETL for %s input file(s)", len(paths))
     for path in paths:
         ingest_path(path, processed_dir)
+
+    detector = load_detector()
+    model_version = model_version_from_path()
+    results = process_pending_frames(detector, model_version)
+    logger.info("inference finished for %s frame(s)", len(results))
+
     logger.info("one-shot ETL finished")
     return 0
 

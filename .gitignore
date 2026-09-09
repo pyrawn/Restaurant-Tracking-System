@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Live capture output (raw YouTube snapshots)
+data/inbox/live_*.jpg
+
 # C extensions
 *.so
 
