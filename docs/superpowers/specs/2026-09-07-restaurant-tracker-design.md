@@ -25,8 +25,6 @@ Incluido en el MVP:
   capturas reales de Roblox.
 - Asociación de detecciones con zonas fijas de mesas.
 - Conteo de personas, estado de ocupación y confianza por mesa.
-- Catálogo fijo de meseros y skins.
-- Asignación de meseros usando únicamente ese catálogo.
 - Historial operacional en PostgreSQL.
 - Dashboard Flask con HTML, CSS y JavaScript nativo.
 - Actualización del dashboard mediante polling cada 30 segundos.
@@ -41,11 +39,8 @@ Fuera del MVP:
 - React u otro framework de frontend.
 - Entrenamiento de una red neuronal desde cero.
 - Reconocimiento facial.
-- Creación o edición de meseros desde el dashboard.
-
-La identificación automática de una skin puede producir un
-`detected_waiter_id`, pero este valor es nullable y no bloquea el MVP. El mesero
-asignado a una mesa proviene del catálogo fijo.
+- Identificación o seguimiento de meseros: el proyecto solo cuenta clientes
+  por mesa.
 
 ## 3. Arquitectura
 
@@ -146,7 +141,6 @@ Cada frame procesado produce una observación para cada mesa configurada:
   "people_count": 2,
   "occupied": true,
   "confidence": 0.87,
-  "detected_waiter_id": null,
   "model_version": "configured-model-version"
 }
 ```
@@ -192,13 +186,7 @@ tables
 
 table_observations
   id, frame_id, table_id, people_count, occupied,
-  confidence, detected_waiter_id, model_version, processed_at
-
-waiters
-  id, code, display_name, skin_reference_path
-
-waiter_assignments
-  id, waiter_id, table_id, started_at, ended_at
+  confidence, model_version, processed_at
 ```
 
 Restricciones mínimas:
@@ -207,13 +195,11 @@ Restricciones mínimas:
 - La combinación `(media_input_id, frame_index)` es única.
 - La combinación `(frame_id, table_id)` en observaciones es única.
 - `people_count` no puede ser negativo.
-- Los meseros se cargan desde datos iniciales versionados y no tienen CRUD en
-  el MVP.
 - La carga de todas las observaciones de un frame ocurre en una transacción.
 
 Las imágenes se almacenan en el filesystem; PostgreSQL conserva sus rutas y
 metadatos. Una vista `latest_table_state` entrega la última observación válida,
-capacidad, mesero asignado, mesero detectado y antigüedad por mesa.
+capacidad y antigüedad por mesa.
 
 ### REQ-05 — Dashboard web propio
 
@@ -222,7 +208,6 @@ Flask expone el dashboard y una API JSON mínima:
 ```text
 GET  /api/tables/latest
 GET  /api/tables/{id}/history
-POST /api/tables/{id}/waiter
 ```
 
 El navegador consulta `/api/tables/latest` cada 30 segundos y actualiza el DOM
@@ -233,8 +218,6 @@ Cada mesa muestra:
 
 - Estado libre, ocupada o sin datos.
 - Número de personas y capacidad.
-- Mesero asignado.
-- Mesero detectado, cuando exista.
 - Confianza del modelo.
 - Hora de la última observación.
 - Indicador de información atrasada cuando supera `STALE_AFTER_SECONDS`.
@@ -255,7 +238,6 @@ Criterios de aceptación:
   disponible en PostgreSQL.
 - Una actualización fallida conserva los últimos datos visibles y muestra un
   indicador de desconexión.
-- Solo se puede asignar un mesero existente en el catálogo fijo.
 
 ## 5. Handoffs del equipo Umizumi
 

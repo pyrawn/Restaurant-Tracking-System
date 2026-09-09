@@ -9,8 +9,8 @@ class DatabaseMappingTests(TestCase):
     def test_fetch_latest_table_state_maps_all_rows(self, get_connection):
         cursor = MagicMock()
         cursor.fetchall.return_value = [
-            (1, "Table 1", 4, 2, True, 0.9, None, "mock-v1", None, 1, "Waiter 1"),
-            (2, "Table 2", 4, 0, False, 0.95, None, "mock-v1", None, None, None),
+            (1, "Table 1", 4, 2, True, 0.9, "mock-v1", None),
+            (2, "Table 2", 4, 0, False, 0.95, "mock-v1", None),
         ]
         connection = MagicMock()
         connection.cursor.return_value.__enter__.return_value = cursor

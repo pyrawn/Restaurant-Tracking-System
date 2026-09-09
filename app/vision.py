@@ -58,7 +58,6 @@ def build_table_observations(detections, tables, model_version: str) -> list[dic
             "people_count": count,
             "occupied": count > 0,
             "confidence": round(confidence, 4),
-            "detected_waiter_id": None,
             "model_version": model_version,
         })
     return observations

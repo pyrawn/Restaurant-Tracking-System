@@ -16,13 +16,6 @@ CREATE TABLE IF NOT EXISTS tables (
     polygon JSONB NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS waiters (
-    id BIGSERIAL PRIMARY KEY,
-    code TEXT NOT NULL UNIQUE,
-    display_name TEXT NOT NULL,
-    skin_reference_path TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS frames (
     id BIGSERIAL PRIMARY KEY,
     media_input_id BIGINT NOT NULL REFERENCES media_inputs(id),
@@ -42,18 +35,9 @@ CREATE TABLE IF NOT EXISTS table_observations (
     people_count INTEGER NOT NULL CHECK (people_count >= 0),
     occupied BOOLEAN NOT NULL,
     confidence DOUBLE PRECISION NOT NULL CHECK (confidence BETWEEN 0 AND 1),
-    detected_waiter_id BIGINT REFERENCES waiters(id),
     model_version TEXT NOT NULL,
     processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (frame_id, table_id)
-);
-
-CREATE TABLE IF NOT EXISTS waiter_assignments (
-    id BIGSERIAL PRIMARY KEY,
-    waiter_id BIGINT NOT NULL REFERENCES waiters(id),
-    table_id BIGINT NOT NULL REFERENCES tables(id),
-    started_at TIMESTAMPTZ NOT NULL,
-    ended_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS table_observations_latest_idx
@@ -66,18 +50,10 @@ WITH latest_observations AS (
         people_count,
         occupied,
         confidence,
-        detected_waiter_id,
         model_version,
         processed_at
     FROM table_observations
     ORDER BY table_id, processed_at DESC
-), current_assignments AS (
-    SELECT DISTINCT ON (table_id)
-        table_id,
-        waiter_id
-    FROM waiter_assignments
-    WHERE ended_at IS NULL
-    ORDER BY table_id, started_at DESC
 )
 SELECT
     t.id AS table_id,
@@ -86,12 +62,7 @@ SELECT
     o.people_count,
     o.occupied,
     o.confidence,
-    o.detected_waiter_id,
     o.model_version,
-    o.processed_at,
-    a.waiter_id AS assigned_waiter_id,
-    w.display_name AS assigned_waiter_name
+    o.processed_at
 FROM tables AS t
-LEFT JOIN latest_observations AS o ON o.table_id = t.id
-LEFT JOIN current_assignments AS a ON a.table_id = t.id
-LEFT JOIN waiters AS w ON w.id = a.waiter_id;
+LEFT JOIN latest_observations AS o ON o.table_id = t.id;
