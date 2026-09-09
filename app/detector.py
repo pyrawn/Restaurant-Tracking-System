@@ -4,7 +4,7 @@ from pathlib import Path
 from ultralytics import YOLO
 
 PERSON_CLASS_ID = 0
-DEFAULT_MODEL_PATH = "/app/models/model.pt"
+DEFAULT_MODEL_PATH = "/app/models/yolov8s.pt"
 DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 
 
