@@ -13,7 +13,7 @@ from app.detector import (
 class DetectorTests(unittest.TestCase):
     def test_get_model_path_defaults(self):
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(get_model_path(), "/app/models/model.pt")
+            self.assertEqual(get_model_path(), "/app/models/yolov8s.pt")
 
     def test_get_model_path_reads_environment(self):
         with patch.dict(os.environ, {"MODEL_PATH": "/tmp/custom.pt"}):
@@ -24,7 +24,7 @@ class DetectorTests(unittest.TestCase):
             self.assertEqual(get_confidence_threshold(), 0.25)
 
     def test_model_version_from_path(self):
-        self.assertEqual(model_version_from_path("/app/models/model.pt"), "yolo:model")
+        self.assertEqual(model_version_from_path("/app/models/yolov8s.pt"), "yolo:yolov8s")
 
     @patch("app.detector.YOLO")
     def test_load_detector_filters_person_class_and_formats_detections(self, mock_yolo_cls):

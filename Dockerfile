@@ -13,9 +13,9 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" \
+RUN python -c "from ultralytics import YOLO; YOLO('yolov8s.pt')" \
     && mkdir -p /app/models \
-    && mv yolov8n.pt /app/models/model.pt
+    && mv yolov8s.pt /app/models/yolov8s.pt
 
 COPY app app
 COPY tests tests
