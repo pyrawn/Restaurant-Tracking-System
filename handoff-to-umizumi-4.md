@@ -129,12 +129,17 @@ already serves live pipeline output correctly with zero changes needed.
    separate from the original Roblox-screenshot flow from Umizumi 2. Both
    sources feed the same `frames`/`table_observations` contract, so nothing
    about Umizumi 4 needs to know which source produced a given frame.
-4. **No waiter assignment logic exists.** `detected_waiter_id` is always
-   `NULL` and `waiter_assignments` is never populated — this was already
-   out of scope per `handoff-to-umizumi-3.md` ("waiter assignments use
-   fixed seeded data" — but no seed data actually assigns them either).
-   The dashboard already renders "Mesero sin asignar" for this case, so
-   it's a display-correct no-op, not a bug.
+4. **Waiter tracking was removed entirely, on purpose.** Earlier drafts of
+   this project (visible in `handoff.md` and the original design spec)
+   planned a `waiters` catalog, `waiter_assignments`, and a
+   `detected_waiter_id` column tied to matching Roblox avatar "skins." The
+   project owner explicitly dropped this scope once the project moved to
+   real video: there's no equivalent to a swappable avatar skin for real
+   staff, and the project now only counts customers per table. The
+   `waiters` and `waiter_assignments` tables, `detected_waiter_id`,
+   `skin_reference_path`, and `data/skins/` are all gone — from the schema,
+   the seed data, `app/db.py`, `app/vision.py`, the dashboard JS, and the
+   design spec. Umizumi 4 should not reintroduce any of this.
 
 ## Scope for Umizumi 4
 

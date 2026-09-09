@@ -12,11 +12,8 @@ TABLE_STATE_COLUMNS = (
     "people_count",
     "occupied",
     "confidence",
-    "detected_waiter_id",
     "model_version",
     "processed_at",
-    "assigned_waiter_id",
-    "assigned_waiter_name",
 )
 
 FRAME_COLUMNS = ("id", "image_path", "media_input_id", "frame_index", "captured_at")
@@ -133,13 +130,12 @@ def save_frame_observations(frame_id: int, observations: list[dict]) -> None:
                     """
                     INSERT INTO table_observations
                         (frame_id, table_id, people_count, occupied, confidence,
-                         detected_waiter_id, model_version)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                         model_version)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (frame_id, table_id) DO UPDATE SET
                         people_count = EXCLUDED.people_count,
                         occupied = EXCLUDED.occupied,
                         confidence = EXCLUDED.confidence,
-                        detected_waiter_id = EXCLUDED.detected_waiter_id,
                         model_version = EXCLUDED.model_version,
                         processed_at = NOW()
                     """,
@@ -149,7 +145,6 @@ def save_frame_observations(frame_id: int, observations: list[dict]) -> None:
                         observation["people_count"],
                         observation["occupied"],
                         observation["confidence"],
-                        observation.get("detected_waiter_id"),
                         observation["model_version"],
                     ),
                 )

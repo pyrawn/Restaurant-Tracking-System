@@ -21,7 +21,7 @@ class DetectorTests(unittest.TestCase):
 
     def test_get_confidence_threshold_defaults(self):
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(get_confidence_threshold(), 0.5)
+            self.assertEqual(get_confidence_threshold(), 0.25)
 
     def test_model_version_from_path(self):
         self.assertEqual(model_version_from_path("/app/models/model.pt"), "yolo:model")

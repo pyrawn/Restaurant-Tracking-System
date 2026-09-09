@@ -5,7 +5,7 @@ from ultralytics import YOLO
 
 PERSON_CLASS_ID = 0
 DEFAULT_MODEL_PATH = "/app/models/model.pt"
-DEFAULT_CONFIDENCE_THRESHOLD = 0.5
+DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 
 
 def get_model_path() -> str:

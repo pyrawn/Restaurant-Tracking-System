@@ -16,10 +16,8 @@ function renderTables(tables) {
     count.textContent = table.people_count == null
       ? "Sin observación"
       : `${table.people_count}/${table.capacity} personas`;
-    const waiter = document.createElement("p");
-    waiter.textContent = table.assigned_waiter_name || "Mesero sin asignar";
 
-    card.append(title, count, waiter);
+    card.append(title, count);
     grid.append(card);
   }
   lastUpdated.textContent = `Actualizado: ${new Date().toLocaleTimeString()}`;
