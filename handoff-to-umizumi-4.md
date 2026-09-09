@@ -85,6 +85,18 @@ showing a static "BAR & WEBCAM HOURS" placeholder card instead of live
 footage, not a pipeline failure. See the frame at
 `data/processed/<hash>/0.jpg` from that run if you re-derive it.
 
+**Confidence threshold and polygon calibration** (done live, after the
+initial handoff, once the project owner ran the continuous `live` service
+during real operating hours): raw detections on this camera were landing
+around 0.24-0.38 confidence, so the default `CONFIDENCE_THRESHOLD=0.5` was
+silently dropping every real detection. Lowered to `0.25`; confirmed frames
+went from 0 to 2-3 detections. Table polygons were then calibrated against
+a real captured frame (see the 5 tables above) and confirmed correct: e.g.
+frame 76 recorded `people_count=2` at `Left Table`, frame 77 recorded
+`people_count=1` at both `Left Table` and `Middle Bar Table`, frame 78/80
+recorded `people_count=1` at `Middle Bar Table` — all matching what was
+visibly true in the source frames at capture time.
+
 **Detector sanity check** (against the Roblox sample image already
 committed in `data/inbox/`, run via `docker compose run --rm worker python
 -m app.worker`): the detector found **1 person at 58.9% confidence**
@@ -101,21 +113,19 @@ already serves live pipeline output correctly with zero changes needed.
 
 ## Known limitations for Umizumi 4 to be aware of
 
-1. **Table polygons are placeholder data, not calibrated to any real
-   frame.** `db/seed.sql`'s four table polygons
-   (e.g. `[[10,10],[30,10],[30,30],[10,30]]`) are small corner-of-frame
-   test coordinates left over from Umizumi 1's scaffold. They don't match
-   the pixel dimensions of the Roblox screenshots, the YouTube webcam
-   frames, or any other real source. This is why `table_observations`
-   currently reads `people_count = 0` / `occupied = false` for every table
-   even when the detector finds a real person — the detection's anchor
-   point never lands inside those tiny placeholder polygons. This is not a
-   regression from this handoff; it's inherited from Umizumi 1 and was
-   already flagged as a risk in `handoff-to-umizumi-3.md`. It's not fixed
-   here because real calibration needs an actual reference frame from
-   whatever camera source is used in production, which nobody has yet.
-   Umizumi 4 should decide whether polygon calibration is in scope before
-   presenting per-table occupancy as meaningful in a demo.
+1. **Table polygons are now calibrated to the live YouTube camera** (the
+   Beach Bar St. John webcam, 1920x1080), not the placeholder corner
+   coordinates Umizumi 1 originally seeded. `db/seed.sql` defines 5 tables
+   (`Right Front Table`, `Behind Right-Middle Table`, `Left Table`, `Middle
+   Bar Table`, `Background Left Table`) with polygons drawn against a real
+   captured frame and confirmed against live detections (see verification
+   below). **If the camera source ever changes** (different URL, different
+   framing, back to Roblox), these polygons stop being meaningful and need
+   to be recalibrated the same way: capture a frame, draw candidate boxes
+   with matplotlib/OpenCV, verify against real detections, then update
+   `tables.polygon` for each row (an `UPDATE`, not a reseed, if there's
+   observation history worth keeping — `db/seed.sql`'s `ON CONFLICT (name)
+   DO NOTHING` won't touch already-seeded rows).
 2. **`yt-dlp` needs to stay current.** YouTube changes its extraction
    internals often enough that an outdated `yt-dlp` breaks with `No video
    formats found` (this happened with the system-installed `apt` version,
