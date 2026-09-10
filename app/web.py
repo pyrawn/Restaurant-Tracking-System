@@ -1,8 +1,8 @@
 import os
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 
-from app.db import fetch_latest_table_state, get_connection
+from app.db import fetch_latest_table_state, fetch_observation_history, get_connection
 
 
 app = Flask(__name__)
@@ -27,6 +27,20 @@ def dashboard():
 def latest_tables():
     try:
         return jsonify(fetch_latest_table_state())
+    except Exception as error:
+        return jsonify({"error": str(error)}), 503
+
+
+@app.get("/api/tables/history")
+def tables_history():
+    try:
+        hours = int(request.args.get("hours", 3))
+    except ValueError:
+        return jsonify({"error": "hours must be an integer"}), 400
+    hours = min(max(hours, 1), 24)
+
+    try:
+        return jsonify(fetch_observation_history(hours=hours))
     except Exception as error:
         return jsonify({"error": str(error)}), 503
 
