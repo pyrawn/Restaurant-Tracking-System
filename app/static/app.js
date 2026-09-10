@@ -210,17 +210,17 @@ async function fetchJson(url) {
 
 async function refresh() {
   try {
-    const [tables, history] = await Promise.all([
-      fetchJson("/api/tables/latest"),
-      fetchJson(`/api/tables/history?hours=${HISTORY_HOURS}`),
-    ]);
-
-    renderTables(tables);
-    renderKpis(tables);
-    renderCurrentChart(tables);
-    renderOccupancyChart(tables);
-    renderTrendChart(history);
-    error.hidden = true;
+  const [tables, history] = await Promise.all([
+        fetchJson("/api/tables/latest"),
+        fetchJson(`/api/tables/history?hours=${HISTORY_HOURS}`),
+      ]);
+  
+      renderTables(tables);
+      renderKpis(tables);
+      renderCurrentChart(tables);
+      renderOccupancyChart(tables);
+      renderTrendChart(history);
+      error.hidden = true;
   } catch (reason) {
     error.textContent = `No se pudo actualizar el dashboard: ${reason.message}`;
     error.hidden = false;

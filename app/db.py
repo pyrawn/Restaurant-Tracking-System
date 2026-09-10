@@ -26,7 +26,7 @@ def get_connection():
     return psycopg.connect(os.environ["DATABASE_URL"])
 
 
-def _rows_to_dicts(rows, columns):
+    def _rows_to_dicts(rows, columns):
     return [
         {
             column: value.isoformat() if isinstance(value, (date, datetime)) else value
