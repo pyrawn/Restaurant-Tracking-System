@@ -16,8 +16,31 @@
         <p id="last-updated" class="muted">Cargando…</p>
       </header>
       <p id="error" class="error" role="alert" hidden></p>
+
+      <section id="kpi-strip" class="kpi-strip" aria-live="polite"></section>
+
+      <section class="chart-grid">
+        <div class="chart-card">
+          <h3>Personas por mesa (ahora)</h3>
+          <div class="chart-wrap"><canvas id="chart-current"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Ocupación de mesas</h3>
+          <div class="chart-wrap"><canvas id="chart-occupancy"></canvas></div>
+        </div>
+      </section>
+
+      <section class="chart-grid chart-grid--wide">
+        <div class="chart-card chart-card--wide">
+          <h3>Tendencia de ocupación</h3>
+          <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
+        </div>
+      </section>
+
+      <h2 class="section-title">Detalle por mesa</h2>
       <section id="table-grid" class="table-grid" aria-live="polite"></section>
     </main>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="{{ url_for('static', filename='app.js') }}"></script>
   </body>
 </html>

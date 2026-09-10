@@ -52,6 +52,73 @@ h1 {
   padding: 12px 16px;
 }
 
+.section-title {
+  font-size: 1.1rem;
+  color: #d1d5db;
+  margin: 40px 0 16px;
+}
+
+.kpi-strip {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin-bottom: 32px;
+}
+
+.kpi-card {
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.kpi-label {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.kpi-value {
+  font-size: 1.9rem;
+  font-weight: 700;
+  margin: 6px 0 2px;
+}
+
+.kpi-hint {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.chart-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-bottom: 16px;
+}
+
+.chart-card {
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.chart-card h3 {
+  font-size: 0.95rem;
+  color: #d1d5db;
+  margin-bottom: 12px;
+}
+
+.chart-wrap {
+  position: relative;
+  height: 240px;
+}
+
+.chart-grid--wide .chart-card--wide .chart-wrap {
+  height: 300px;
+}
+
 .table-grid {
   display: grid;
   gap: 16px;
