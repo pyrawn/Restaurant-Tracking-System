@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Restaurant Tracker · Calendario</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css">
+  </head>
+  <body>
+    {% set active_page = 'schedule' %}
+    {% include '_nav.html' %}
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">RESTAURANT TRACKER</p>
+          <h1>Horarios de meseros</h1>
+        </div>
+        <p class="muted">Horarios en UTC · arrastra para crear un turno, haz clic en uno existente para editarlo</p>
+      </header>
+      <p id="error" class="error" role="alert" hidden></p>
+
+      <section class="chart-card">
+        <div id="calendar"></div>
+      </section>
+    </main>
+
+    <div id="shift-modal" class="modal-overlay" hidden>
+      <form id="shift-form" class="modal-card">
+        <h2 id="shift-modal-title">Nuevo turno</h2>
+
+        <label for="shift-waiter">Mesero</label>
+        <div class="inline-field">
+          <select id="shift-waiter" required></select>
+          <button type="button" id="new-waiter-btn" class="btn-secondary">+ mesero</button>
+        </div>
+
+        <label>Mesas asignadas</label>
+        <div id="shift-tables" class="checkbox-grid"></div>
+
+        <label for="shift-start">Inicio (UTC)</label>
+        <input id="shift-start" type="datetime-local" step="900" required>
+        <label for="shift-end">Fin (UTC)</label>
+        <input id="shift-end" type="datetime-local" step="900" required>
+
+        <p id="shift-error" class="error" role="alert" hidden></p>
+
+        <div class="modal-actions">
+          <button type="button" id="delete-shift-btn" class="btn-danger" hidden>Eliminar</button>
+          <button type="button" id="cancel-shift-btn" class="btn-secondary">Cancelar</button>
+          <button type="submit" class="btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+    <script src="{{ url_for('static', filename='schedule.js') }}"></script>
+  </body>
+</html>

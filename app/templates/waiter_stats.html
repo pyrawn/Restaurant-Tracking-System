@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Restaurant Tracker · Estadísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    {% set active_page = 'stats' %}
+    {% include '_nav.html' %}
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">RESTAURANT TRACKER</p>
+          <h1>Estadísticas de meseros</h1>
+        </div>
+      </header>
+
+      <section class="chart-card date-range-bar">
+        <label for="range-start">Desde</label>
+        <input id="range-start" type="datetime-local" step="900">
+        <label for="range-end">Hasta</label>
+        <input id="range-end" type="datetime-local" step="900">
+        <button type="button" id="apply-range-btn" class="btn-primary">Aplicar</button>
+        <span class="muted">Horarios en UTC</span>
+      </section>
+
+      <p id="error" class="error" role="alert" hidden></p>
+
+      <section class="chart-grid">
+        <div class="chart-card">
+          <h3>Personas atendidas por mesero</h3>
+          <div class="chart-wrap"><canvas id="chart-served"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Ocupación promedio por mesero</h3>
+          <div class="chart-wrap"><canvas id="chart-avg-occupancy"></canvas></div>
+        </div>
+      </section>
+
+      <h2 class="section-title">Detalle por mesero</h2>
+      <div class="table-wrap">
+        <table id="stats-table" class="data-table">
+          <thead>
+            <tr>
+              <th>Mesero</th>
+              <th>Turnos</th>
+              <th>Horas trabajadas</th>
+              <th>Ocupación promedio</th>
+              <th>Personas atendidas</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='waiter_stats.js') }}"></script>
+  </body>
+</html>
