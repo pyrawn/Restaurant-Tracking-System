@@ -1,5 +1,7 @@
 # Referencia de código
 
+*[English version](CODE_REFERENCE.en.md)*
+
 Qué hace cada función/clase del proyecto, agrupado por archivo. Para el
 "por qué" de cada decisión, ver `README.md` y los handoffs (`handoff-*.md`);
 esto es solo el mapa de qué hace cada pieza.

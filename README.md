@@ -1,5 +1,7 @@
 # Restaurant Tracking System
 
+*[English version](README.en.md)*
+
 Pipeline Umizumi para monitorear la ocupación de mesas de un restaurante a
 partir de video (una cámara/webcam en vivo) o imágenes sueltas, con un
 dashboard operativo: estado en tiempo real, calendario de turnos de meseros y
