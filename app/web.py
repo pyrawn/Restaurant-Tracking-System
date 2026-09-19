@@ -213,6 +213,36 @@ def edit_shift(shift_id: int):
     return jsonify({"id": shift_id})
 
 
+@app.post("/api/shifts/bulk")
+@login_required
+def add_shifts_bulk():
+    body = request.get_json(silent=True) or {}
+    items = body.get("shifts")
+    if not isinstance(items, list) or not items:
+        return jsonify({"error": "shifts must be a non-empty list"}), 400
+
+    created = []
+    conflicts = []
+    for index, item in enumerate(items):
+        try:
+            waiter_id, starts_at, ends_at, table_ids = _shift_payload(item)
+            if ends_at <= starts_at:
+                raise ValueError("ends_at must be after starts_at")
+        except (KeyError, ValueError, TypeError):
+            conflicts.append({"index": index, "error": "invalid shift payload"})
+            continue
+
+        try:
+            shift_id = create_shift(waiter_id, starts_at, ends_at, table_ids)
+            created.append({"index": index, "id": shift_id})
+        except ScheduleConflict as error:
+            conflicts.append({"index": index, "error": str(error)})
+        except Exception as error:
+            conflicts.append({"index": index, "error": str(error)})
+
+    return jsonify({"created": created, "conflicts": conflicts}), 207
+
+
 @app.delete("/api/shifts/<int:shift_id>")
 @login_required
 def remove_shift(shift_id: int):

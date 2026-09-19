@@ -218,6 +218,72 @@ class ShiftApiTests(AuthenticatedTestCase):
         delete_shift.assert_called_once_with(5)
 
 
+class BulkShiftApiTests(AuthenticatedTestCase):
+    def test_bulk_rejects_empty_list(self):
+        response = self.client.post("/api/shifts/bulk", json={"shifts": []})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_bulk_rejects_missing_shifts_key(self):
+        response = self.client.post("/api/shifts/bulk", json={})
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("app.web.create_shift")
+    def test_bulk_reports_mixed_success_and_conflicts(self, create_shift):
+        create_shift.side_effect = [1, ScheduleConflict("El mesero ya tiene un turno en ese horario.")]
+
+        response = self.client.post(
+            "/api/shifts/bulk",
+            json={
+                "shifts": [
+                    {
+                        "waiter_id": 1,
+                        "starts_at": "2026-01-01T09:00:00+00:00",
+                        "ends_at": "2026-01-01T12:00:00+00:00",
+                        "table_ids": [1],
+                    },
+                    {
+                        "waiter_id": 1,
+                        "starts_at": "2026-01-08T09:00:00+00:00",
+                        "ends_at": "2026-01-08T12:00:00+00:00",
+                        "table_ids": [1],
+                    },
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, 207)
+        body = response.get_json()
+        self.assertEqual(body["created"], [{"index": 0, "id": 1}])
+        self.assertEqual(len(body["conflicts"]), 1)
+        self.assertEqual(body["conflicts"][0]["index"], 1)
+
+    @patch("app.web.create_shift")
+    def test_bulk_flags_invalid_item_without_aborting_others(self, create_shift):
+        create_shift.return_value = 9
+
+        response = self.client.post(
+            "/api/shifts/bulk",
+            json={
+                "shifts": [
+                    {"waiter_id": 1},  # missing starts_at/ends_at/table_ids
+                    {
+                        "waiter_id": 1,
+                        "starts_at": "2026-01-01T09:00:00+00:00",
+                        "ends_at": "2026-01-01T12:00:00+00:00",
+                        "table_ids": [1],
+                    },
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, 207)
+        body = response.get_json()
+        self.assertEqual(body["conflicts"], [{"index": 0, "error": "invalid shift payload"}])
+        self.assertEqual(body["created"], [{"index": 1, "id": 9}])
+
+
 class WaiterStatsApiTests(AuthenticatedTestCase):
     @patch("app.web.fetch_waiter_stats")
     def test_stats_defaults_to_last_seven_days(self, fetch_waiter_stats):

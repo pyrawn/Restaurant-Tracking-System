@@ -21,6 +21,10 @@
       <p id="error" class="error" role="alert" hidden></p>
 
       <section class="chart-card">
+        <div class="calendar-toolbar">
+          <button type="button" id="duplicate-week-btn" class="btn-secondary">Duplicar semana visible → siguiente semana</button>
+          <span id="duplicate-status" class="muted"></span>
+        </div>
         <div id="calendar"></div>
       </section>
     </main>
@@ -42,6 +46,13 @@
         <input id="shift-start" type="datetime-local" step="900" required>
         <label for="shift-end">Fin (UTC)</label>
         <input id="shift-end" type="datetime-local" step="900" required>
+
+        <div id="repeat-section">
+          <label>Repetir en (opcional, solo al crear)</label>
+          <div id="repeat-weekdays" class="checkbox-grid"></div>
+          <label for="repeat-until">Repetir hasta (fecha, UTC)</label>
+          <input id="repeat-until" type="date">
+        </div>
 
         <p id="shift-error" class="error" role="alert" hidden></p>
 

@@ -357,6 +357,20 @@ button {
   color: #111827;
 }
 
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+#repeat-section {
+  border-top: 1px solid #374151;
+  margin-top: 16px;
+  padding-top: 4px;
+}
+
 .date-range-bar {
   display: flex;
   align-items: center;

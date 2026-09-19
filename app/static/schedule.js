@@ -8,6 +8,20 @@ const startInput = document.querySelector("#shift-start");
 const endInput = document.querySelector("#shift-end");
 const shiftError = document.querySelector("#shift-error");
 const deleteBtn = document.querySelector("#delete-shift-btn");
+const repeatSection = document.querySelector("#repeat-section");
+const repeatWeekdaysContainer = document.querySelector("#repeat-weekdays");
+const repeatUntilInput = document.querySelector("#repeat-until");
+const statusEl = document.querySelector("#duplicate-status");
+
+const WEEKDAY_LABELS = [
+  { value: 1, label: "Lun" },
+  { value: 2, label: "Mar" },
+  { value: 3, label: "Mié" },
+  { value: 4, label: "Jue" },
+  { value: 5, label: "Vie" },
+  { value: 6, label: "Sáb" },
+  { value: 0, label: "Dom" },
+];
 
 let tables = [];
 let editingShiftId = null;
@@ -60,6 +74,28 @@ async function loadTables() {
   }
 }
 
+function renderRepeatWeekdays() {
+  repeatWeekdaysContainer.replaceChildren();
+  for (const { value, label } of WEEKDAY_LABELS) {
+    const labelEl = document.createElement("label");
+    labelEl.className = "checkbox-item";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = value;
+    labelEl.append(input, document.createTextNode(label));
+    repeatWeekdaysContainer.append(labelEl);
+  }
+}
+
+function getCheckedWeekdays() {
+  return [...repeatWeekdaysContainer.querySelectorAll("input:checked")].map((input) => Number(input.value));
+}
+
+function resetRepeatFields() {
+  for (const input of repeatWeekdaysContainer.querySelectorAll("input")) input.checked = false;
+  repeatUntilInput.value = "";
+}
+
 function setCheckedTables(tableIds) {
   const ids = new Set(tableIds.map(String));
   for (const input of tablesContainer.querySelectorAll("input[type=checkbox]")) {
@@ -82,6 +118,8 @@ function openModal({ shiftId, waiterId, tableIds, start, end }) {
   setCheckedTables(tableIds ?? []);
   startInput.value = toUtcInputValue(start);
   endInput.value = toUtcInputValue(end);
+  repeatSection.hidden = !!editingShiftId;
+  resetRepeatFields();
   modal.hidden = false;
 }
 
@@ -96,15 +134,45 @@ function showShiftError(message) {
   shiftError.hidden = false;
 }
 
+function showStatus(message) {
+  statusEl.textContent = message;
+}
+
+// Additional occurrences for the "repetir en" pattern: same time-of-day and
+// duration as the base shift, on each checked weekday strictly after the
+// base date, up to and including `untilValue` (a yyyy-mm-dd string). Fixed
+// 24h steps preserve the base time-of-day exactly since everything here is
+// UTC (no DST to worry about).
+function computeRepeatOccurrences(baseStart, baseEnd, weekdays, untilValue) {
+  if (!weekdays.length || !untilValue) return [];
+  const until = new Date(`${untilValue}T23:59:59Z`);
+  const durationMs = baseEnd.getTime() - baseStart.getTime();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+
+  const occurrences = [];
+  let cursor = new Date(baseStart.getTime() + oneDayMs);
+  while (cursor <= until) {
+    if (weekdays.includes(cursor.getUTCDay())) {
+      occurrences.push({ start: new Date(cursor), end: new Date(cursor.getTime() + durationMs) });
+    }
+    cursor = new Date(cursor.getTime() + oneDayMs);
+  }
+  return occurrences;
+}
+
 async function saveShift(event) {
   event.preventDefault();
   shiftError.hidden = true;
 
+  const startsAt = fromUtcInputValue(startInput.value);
+  const endsAt = fromUtcInputValue(endInput.value);
+  const waiterId = Number(waiterSelect.value);
+  const tableIds = getCheckedTables();
   const payload = {
-    waiter_id: Number(waiterSelect.value),
-    starts_at: fromUtcInputValue(startInput.value).toISOString(),
-    ends_at: fromUtcInputValue(endInput.value).toISOString(),
-    table_ids: getCheckedTables(),
+    waiter_id: waiterId,
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
+    table_ids: tableIds,
   };
 
   try {
@@ -120,6 +188,32 @@ async function saveShift(event) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+
+      const occurrences = computeRepeatOccurrences(
+        startsAt,
+        endsAt,
+        getCheckedWeekdays(),
+        repeatUntilInput.value,
+      );
+      if (occurrences.length && !confirm(`¿Crear ${occurrences.length} repetición(es) más de este turno?`)) {
+        showStatus("Turno creado. Repeticiones canceladas.");
+      } else if (occurrences.length) {
+        const result = await fetchJson("/api/shifts/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shifts: occurrences.map((occurrence) => ({
+              waiter_id: waiterId,
+              starts_at: occurrence.start.toISOString(),
+              ends_at: occurrence.end.toISOString(),
+              table_ids: tableIds,
+            })),
+          }),
+        });
+        showStatus(
+          `Turno creado. Repeticiones: ${result.created.length} creadas, ${result.conflicts.length} con conflicto (omitidas).`,
+        );
+      }
     }
     closeModal();
     calendar.refetchEvents();
@@ -174,7 +268,74 @@ async function updateShiftTimes(info) {
   }
 }
 
+async function duplicateWeek() {
+  const view = calendar.view;
+  const weekStart = view.activeStart;
+  const weekEnd = view.activeEnd;
+
+  showStatus("Buscando turnos…");
+  let shifts;
+  try {
+    shifts = await fetchJson(
+      `/api/shifts?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`,
+    );
+  } catch (reason) {
+    showStatus(`Error: ${reason.message}`);
+    return;
+  }
+
+  // /api/shifts returns anything that OVERLAPS the visible week, including a
+  // shift that starts before it or runs past it (needed to render the
+  // calendar edges correctly). Duplicating those as-is would copy their full
+  // original span every time, growing further with each click. Only
+  // duplicate shifts fully contained in the visible week.
+  const contained = shifts.filter(
+    (shift) => new Date(shift.starts_at) >= weekStart && new Date(shift.ends_at) <= weekEnd,
+  );
+  const skipped = shifts.length - contained.length;
+
+  if (!contained.length) {
+    showStatus(
+      skipped
+        ? `Ningun turno cabe completo dentro de la semana visible (${skipped} se salen del rango y se omitieron).`
+        : "No hay turnos en la semana visible para duplicar.",
+    );
+    return;
+  }
+
+  const confirmed = confirm(
+    `¿Duplicar ${contained.length} turno(s) a la semana siguiente?` +
+      (skipped ? ` (${skipped} se salen del rango visible y no se van a duplicar)` : ""),
+  );
+  if (!confirmed) {
+    showStatus("Duplicación cancelada.");
+    return;
+  }
+
+  showStatus("Duplicando…");
+  try {
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const result = await fetchJson("/api/shifts/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        shifts: contained.map((shift) => ({
+          waiter_id: shift.waiter_id,
+          starts_at: new Date(new Date(shift.starts_at).getTime() + weekMs).toISOString(),
+          ends_at: new Date(new Date(shift.ends_at).getTime() + weekMs).toISOString(),
+          table_ids: shift.table_ids,
+        })),
+      }),
+    });
+    showStatus(`${result.created.length} turnos creados, ${result.conflicts.length} con conflicto (omitidos).`);
+    calendar.refetchEvents();
+  } catch (reason) {
+    showStatus(`Error: ${reason.message}`);
+  }
+}
+
 async function init() {
+  renderRepeatWeekdays();
   await Promise.all([loadWaiters(), loadTables()]);
 
   calendar = new FullCalendar.Calendar(document.querySelector("#calendar"), {
@@ -232,5 +393,6 @@ form.addEventListener("submit", saveShift);
 deleteBtn.addEventListener("click", deleteShift);
 document.querySelector("#cancel-shift-btn").addEventListener("click", closeModal);
 document.querySelector("#new-waiter-btn").addEventListener("click", addWaiter);
+document.querySelector("#duplicate-week-btn").addEventListener("click", duplicateWeek);
 
 init();
