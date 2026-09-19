@@ -7,10 +7,12 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   </head>
   <body>
+    {% set active_page = 'dashboard' %}
+    {% include '_nav.html' %}
     <main>
       <header>
         <div>
-          <p class="eyebrow">UMIZUMI · RESTAURANT TRACKER</p>
+          <p class="eyebrow">RESTAURANT TRACKER</p>
           <h1>Estado de mesas</h1>
         </div>
         <p id="last-updated" class="muted">Cargando…</p>

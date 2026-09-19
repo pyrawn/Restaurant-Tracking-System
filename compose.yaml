@@ -21,6 +21,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-restaurant}:${POSTGRES_PASSWORD:-restaurant_dev}@db:5432/${POSTGRES_DB:-restaurant_tracker}
       PORT: 8000
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
     ports:
       - "8000:8000"
     depends_on:

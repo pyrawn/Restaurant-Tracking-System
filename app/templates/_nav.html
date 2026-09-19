@@ -1,0 +1,12 @@
+<nav class="topnav">
+  <div class="topnav-brand">UMIZUMI</div>
+  <div class="topnav-links">
+    <a href="{{ url_for('dashboard') }}" class="{{ 'active' if active_page == 'dashboard' else '' }}">Dashboard</a>
+    <a href="{{ url_for('schedule') }}" class="{{ 'active' if active_page == 'schedule' else '' }}">Calendario</a>
+    <a href="{{ url_for('waiter_stats_page') }}" class="{{ 'active' if active_page == 'stats' else '' }}">Estadísticas</a>
+  </div>
+  <div class="topnav-user">
+    <span class="muted">{{ username }}</span>
+    <a href="{{ url_for('logout') }}">Cerrar sesión</a>
+  </div>
+</nav>

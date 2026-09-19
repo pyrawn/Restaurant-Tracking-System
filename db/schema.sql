@@ -66,3 +66,40 @@ SELECT
     o.processed_at
 FROM tables AS t
 LEFT JOIN latest_observations AS o ON o.table_id = t.id;
+
+-- Operational dashboard: admin login, waiter roster, and shift scheduling.
+-- Owned entirely by the dashboard (Umizumi 4); no coupling to the vision
+-- pipeline (no per-frame waiter detection). Waiter attribution is manual:
+-- a shift assigns a waiter to specific tables for a time window, and stats
+-- are derived from table_observations for those tables during that window.
+
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS waiters (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS waiter_shifts (
+    id BIGSERIAL PRIMARY KEY,
+    waiter_id BIGINT NOT NULL REFERENCES waiters(id),
+    starts_at TIMESTAMPTZ NOT NULL,
+    ends_at TIMESTAMPTZ NOT NULL CHECK (ends_at > starts_at),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS waiter_shifts_waiter_idx ON waiter_shifts (waiter_id, starts_at);
+CREATE INDEX IF NOT EXISTS waiter_shifts_range_idx ON waiter_shifts (starts_at, ends_at);
+
+CREATE TABLE IF NOT EXISTS waiter_shift_tables (
+    shift_id BIGINT NOT NULL REFERENCES waiter_shifts(id) ON DELETE CASCADE,
+    table_id BIGINT NOT NULL REFERENCES tables(id),
+    PRIMARY KEY (shift_id, table_id)
+);
