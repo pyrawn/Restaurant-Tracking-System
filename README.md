@@ -269,6 +269,9 @@ Todas las rutas `/api/*` (salvo `/health`) responden `401` en JSON si no hay
 sesión, en vez de redirigir — pensado para ser consumido por `fetch()` desde
 el frontend.
 
+Referencia de qué hace cada función/clase del proyecto (backend y frontend):
+[`docs/CODE_REFERENCE.md`](docs/CODE_REFERENCE.md).
+
 ## Handoffs Umizumi
 
 1. **Umizumi 1**: contenedores, schema y datos fijos.
